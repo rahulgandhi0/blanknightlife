@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
-import { RefreshCw, Loader2 } from 'lucide-react'
+import { RefreshCw } from 'lucide-react'
 
 interface HistoryItem {
   created_at: string
@@ -26,7 +26,6 @@ export default function ScrapePage() {
   } | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
   const [scrapeStatus, setScrapeStatus] = useState<string | null>(null)
-  const [polling, setPolling] = useState(false)
   const [scrapeStats, setScrapeStats] = useState<{
     found?: number
     processed?: number
@@ -65,76 +64,11 @@ export default function ScrapePage() {
     return () => clearTimeout(t)
   }, [account])
 
-  const pollApifyRun = async (runId: string) => {
-    setPolling(true)
-    setScrapeStatus('Scraping Instagram...')
-    setScrapeStats(null)
-    
-    const maxAttempts = 30
-    let attempts = 0
-
-    const poll = async (): Promise<void> => {
-      if (attempts >= maxAttempts) {
-        setScrapeStatus('Timeout - check Apify dashboard')
-        setPolling(false)
-        return
-      }
-
-      attempts++
-
-      try {
-        const res = await fetch('/api/apify-poll', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ runId })
-        })
-
-        const data = await res.json()
-
-        if (data.ready) {
-          if (data.empty) {
-            setScrapeStatus('No items returned (account private or no posts in range)')
-            setPolling(false)
-          } else if (data.ingested) {
-            const result = data.ingestResult
-            setScrapeStats({
-              found: result?.details?.length || 0,
-              processed: result?.processed || 0,
-              skipped: result?.skipped || 0,
-              errors: result?.errors || 0
-            })
-            setScrapeStatus('✓ DONE')
-            fetchHistory(account.trim())
-            setPolling(false)
-          } else if (data.status === 'FAILED') {
-            setScrapeStatus('Scrape failed - check Apify')
-            setPolling(false)
-          } else if (data.status === 'ABORTED') {
-            setScrapeStatus('Scrape aborted')
-            setPolling(false)
-          } else {
-            setScrapeStatus('Scrape complete but no data')
-            setPolling(false)
-          }
-        } else {
-          setScrapeStatus(`Scraping... (${data.status || 'RUNNING'})`)
-          setTimeout(poll, 8000)
-        }
-      } catch (error) {
-        setScrapeStatus('Polling error')
-        setPolling(false)
-      }
-    }
-
-    poll()
-  }
-
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setResult(null)
     setScrapeStatus(null)
-    setPolling(false)
     try {
       const res = await fetch('/api/apify-trigger', {
         method: 'POST',
@@ -143,8 +77,17 @@ export default function ScrapePage() {
       })
       const data = await res.json()
       setResult(data)
-      if (data.success && data.runId) {
-        pollApifyRun(data.runId)
+      if (data.success) {
+        setScrapeStats({
+          found: data.found || 0,
+          processed: data.ingestResult?.processed || 0,
+          skipped: data.ingestResult?.skipped || 0,
+          errors: data.ingestResult?.errors || 0,
+        })
+        setScrapeStatus(data.message || '✓ DONE')
+        fetchHistory(account.trim())
+      } else if (data.error) {
+        setScrapeStatus(data.error)
       }
     } catch (error) {
       setResult({ error: 'Request failed' })
@@ -186,7 +129,7 @@ export default function ScrapePage() {
               required
             />
           </div>
-          <Button type="submit" disabled={loading || polling} className="bg-violet-600 hover:bg-violet-500">
+          <Button type="submit" disabled={loading} className="bg-violet-600 hover:bg-violet-500">
             {loading ? 'Triggering...' : 'Trigger Scrape'}
           </Button>
         </form>
@@ -205,8 +148,7 @@ export default function ScrapePage() {
         {scrapeStatus && (
           <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm">
-              {polling && <Loader2 className="h-4 w-4 animate-spin text-violet-400" />}
-              <span className={polling ? 'text-zinc-300' : scrapeStatus.startsWith('✓') ? 'text-green-400' : 'text-zinc-400'}>
+              <span className={scrapeStatus.startsWith('✓') ? 'text-green-400' : 'text-zinc-400'}>
                 {scrapeStatus}
               </span>
             </div>

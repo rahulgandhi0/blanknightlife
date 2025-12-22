@@ -10,41 +10,65 @@ export async function POST(request: NextRequest) {
     }
 
     const token = process.env.APIFY_API_TOKEN
-    const actorId = process.env.APIFY_ACTOR_ID
+    const actorId = process.env.APIFY_ACTOR_ID || 'apify~instagram-scraper'
 
-    if (!token || !actorId) {
-      return NextResponse.json({ error: 'APIFY_API_TOKEN or APIFY_ACTOR_ID missing' }, { status: 500 })
+    if (!token) {
+      return NextResponse.json({ error: 'APIFY_API_TOKEN missing' }, { status: 500 })
     }
 
     const cleanHandle = account.trim().replace(/^@/, '')
-    const lastNDays = Math.max(1, Math.ceil((Number(sinceHours) || 48) / 24))
+    const profileUrl = `https://www.instagram.com/${cleanHandle}/`
+    const hours = Number(sinceHours) || 48
+    const onlyPostsNewerThan = `${hours} hours`
 
-    // Default input for apify/instagram-post-scraper
-    const input: Record<string, any> = {
-      usernames: [cleanHandle],
+    const input = {
+      directUrls: [profileUrl],
       resultsType: 'posts',
       resultsLimit: 50,
-      scrapePostsFromLastNDays: lastNDays,
+      onlyPostsNewerThan,
       proxy: { useApifyProxy: true },
     }
 
-    // Also include legacy keys in case a custom actor is used
-    input.handle = cleanHandle
-    input.sinceHours = sinceHours
-
-    const resp = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${token}`, {
+    const runResp = await fetch(`https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input })
+      body: JSON.stringify(input),
     })
 
-    if (!resp.ok) {
-      const err = await resp.text()
-      return NextResponse.json({ error: 'Failed to start Apify run', details: err }, { status: 500 })
+    if (!runResp.ok) {
+      const err = await runResp.text()
+      return NextResponse.json({ error: 'Apify run failed', details: err }, { status: 500 })
     }
 
-    const data = await resp.json()
-    return NextResponse.json({ success: true, runId: data.data?.id })
+    const posts = await runResp.json()
+
+    if (!Array.isArray(posts) || posts.length === 0) {
+      return NextResponse.json({
+        success: true,
+        found: 0,
+        ingested: 0,
+        message: 'No items returned (private account or no posts in range)',
+      })
+    }
+
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000'
+
+    const ingestResp = await fetch(`${baseUrl}/api/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(posts),
+    })
+
+    const ingestData = await ingestResp.json()
+
+    return NextResponse.json({
+      success: true,
+      found: posts.length,
+      ingestResult: ingestData,
+      sample: posts[0] || null,
+    })
   } catch (error) {
     return NextResponse.json({ error: 'Internal error', details: String(error) }, { status: 500 })
   }
