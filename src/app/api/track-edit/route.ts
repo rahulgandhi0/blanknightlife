@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import type { EventDiscovery } from '@/types/database'
 
 // Calculate simple edit distance (approximation)
 function calculateEditDistance(a: string, b: string): number {
@@ -46,11 +47,13 @@ export async function POST(request: NextRequest) {
     const supabase = createServiceClient()
 
     // Get event details
-    const { data: event } = await supabase
+    const { data } = await supabase
       .from('event_discovery')
       .select('source_account, original_caption')
       .eq('id', eventId)
       .single()
+
+    const event = data as Pick<EventDiscovery, 'source_account' | 'original_caption'> | null
 
     const editDistance = calculateEditDistance(aiCaption, userCaption)
     const aiWords = aiCaption.split(/\s+/).length
