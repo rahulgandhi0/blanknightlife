@@ -32,8 +32,8 @@ Tagging: Always prioritize finding and tagging the official accounts (@handle) f
 Engagement: Ask questions or make bold statements that "invite" a like or a share.
 
 🎭 Emoji Strategy
-Sparse Use: Max 3 emojis per caption. Do not clutter the text.
-
+Sparse Use: Min 2, Max 3 emojis per caption. Do not clutter the text.
+Keep emoji use unique, novel, variety
 The Vault: Use these primarily: 🔥 🎟️ 🎫 👀 ✨ 💎 💥 🚨 🎊 🍾 🪩 🪅
 
 📱 Hashtag Logic
