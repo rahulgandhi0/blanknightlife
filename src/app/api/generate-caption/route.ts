@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { rewriteCaption } from '@/lib/groq'
+import type { EventDiscovery } from '@/types/database'
 
 // POST /api/generate-caption
 // Generate AI caption on-demand for a specific event
@@ -19,18 +20,20 @@ export async function POST(request: NextRequest) {
     const supabase = createServiceClient()
 
     // Get the event
-    const { data: event, error: fetchError } = await supabase
+    const { data, error: fetchError } = await supabase
       .from('event_discovery')
       .select('*')
       .eq('id', eventId)
       .single()
 
-    if (fetchError || !event) {
+    if (fetchError || !data) {
       return NextResponse.json(
         { error: 'Event not found' },
         { status: 404 }
       )
     }
+
+    const event = data as EventDiscovery
 
     // Generate AI caption with optional context
     const aiCaption = await rewriteCaption(
@@ -45,7 +48,7 @@ export async function POST(request: NextRequest) {
       .update({
         ai_generated_caption: aiCaption,
         final_caption: aiCaption, // Set as default, user can edit
-      })
+      } as Partial<EventDiscovery>)
       .eq('id', eventId)
       .select()
       .single()
