@@ -13,6 +13,7 @@ import {
 
 const navigation = [
   { name: 'Overview', href: '/', icon: LayoutDashboard },
+  { name: 'Scrape Now', href: '/scrape', icon: Clock },
   { name: 'Pending', href: '/pending', icon: Clock, badge: true },
   { name: 'Scheduled', href: '/scheduled', icon: Calendar },
   { name: 'Posted', href: '/posted', icon: Send },
