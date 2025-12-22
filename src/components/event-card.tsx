@@ -17,7 +17,9 @@ import {
   ChevronLeft,
   ChevronRight,
   Sparkles,
-  Clock
+  Clock,
+  Wand2,
+  Loader2
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { EventDiscovery } from '@/types/database'
@@ -31,33 +33,26 @@ interface EventCardProps {
 
 // Convert 24h time string to 12h format
 function formatTo12h(input: string): string {
-  // Remove all non-digits
   const digits = input.replace(/\D/g, '')
-  
   if (digits.length === 0) return '12:00 PM'
   
   let hours: number
   let minutes: number
   
   if (digits.length <= 2) {
-    // Just hours: "14" -> 14:00
     hours = parseInt(digits, 10)
     minutes = 0
   } else if (digits.length === 3) {
-    // "130" -> 1:30 or "930" -> 9:30
     hours = parseInt(digits.slice(0, 1), 10)
     minutes = parseInt(digits.slice(1), 10)
   } else {
-    // "1430" -> 14:30, "0930" -> 09:30
     hours = parseInt(digits.slice(0, 2), 10)
     minutes = parseInt(digits.slice(2, 4), 10)
   }
   
-  // Clamp values
   hours = Math.min(Math.max(hours, 0), 23)
   minutes = Math.min(Math.max(minutes, 0), 59)
   
-  // Convert to 12h
   const meridiem = hours >= 12 ? 'PM' : 'AM'
   let displayHours = hours % 12
   if (displayHours === 0) displayHours = 12
@@ -65,7 +60,6 @@ function formatTo12h(input: string): string {
   return `${displayHours}:${minutes.toString().padStart(2, '0')} ${meridiem}`
 }
 
-// Parse 12h format back to hours/minutes
 function parse12hTime(timeStr: string): { hours: number; minutes: number } {
   const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i)
   if (!match) return { hours: 12, minutes: 0 }
@@ -82,6 +76,7 @@ function parse12hTime(timeStr: string): { hours: number; minutes: number } {
 
 export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const [caption, setCaption] = useState(event.final_caption || event.ai_generated_caption || '')
+  const [context, setContext] = useState('')
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     event.scheduled_for ? new Date(event.scheduled_for) : undefined
   )
@@ -94,18 +89,17 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const [calendarOpen, setCalendarOpen] = useState(false)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
 
   const mediaUrls = event.media_urls || []
   const hasMultipleImages = mediaUrls.length > 1
+  const hasAiCaption = !!event.ai_generated_caption
 
-  const handleTimeChange = (value: string) => {
-    setTimeRaw(value)
-  }
+  const handleTimeChange = (value: string) => setTimeRaw(value)
 
   const handleTimeBlur = () => {
     if (timeRaw.trim()) {
-      const formatted = formatTo12h(timeRaw)
-      setTimeDisplay(formatted)
+      setTimeDisplay(formatTo12h(timeRaw))
     }
     setTimeRaw('')
   }
@@ -114,6 +108,34 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
     if (e.key === 'Enter') {
       handleTimeBlur()
       ;(e.target as HTMLInputElement).blur()
+    }
+  }
+
+  const handleGenerateCaption = async () => {
+    setIsGenerating(true)
+    try {
+      const response = await fetch('/api/generate-caption', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId: event.id,
+          context: context.trim() || undefined,
+        }),
+      })
+
+      const data = await response.json()
+      
+      if (data.success && data.caption) {
+        setCaption(data.caption)
+      } else {
+        console.error('Failed to generate caption:', data.error)
+        alert('Failed to generate caption. Please try again.')
+      }
+    } catch (error) {
+      console.error('Generate caption error:', error)
+      alert('Failed to generate caption. Please try again.')
+    } finally {
+      setIsGenerating(false)
     }
   }
 
@@ -143,19 +165,14 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
     }
   }
 
-  const nextImage = () => {
-    setCurrentImageIndex((prev) => (prev + 1) % mediaUrls.length)
-  }
-
-  const prevImage = () => {
-    setCurrentImageIndex((prev) => (prev - 1 + mediaUrls.length) % mediaUrls.length)
-  }
+  const nextImage = () => setCurrentImageIndex((prev) => (prev + 1) % mediaUrls.length)
+  const prevImage = () => setCurrentImageIndex((prev) => (prev - 1 + mediaUrls.length) % mediaUrls.length)
 
   return (
     <Card className="overflow-hidden bg-gradient-to-br from-zinc-900 to-zinc-900/60 border border-zinc-800/60 backdrop-blur-sm hover:border-zinc-700/70 transition-all">
-      <div className="grid grid-cols-[180px_1fr_200px] gap-5 p-4 items-stretch min-h-[200px]">
+      <div className="grid grid-cols-[180px_1fr_200px] gap-5 p-4 items-stretch min-h-[240px]">
         {/* Left: Image */}
-        <div className="relative w-full h-full min-h-[170px] rounded-xl overflow-hidden bg-black shadow-2xl ring-1 ring-white/5">
+        <div className="relative w-full h-full min-h-[200px] rounded-xl overflow-hidden bg-black shadow-2xl ring-1 ring-white/5">
           {mediaUrls.length > 0 ? (
             <>
               <Image
@@ -207,7 +224,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
           )}
         </div>
 
-        {/* Middle: Caption */}
+        {/* Middle: Original + Context + Generated Caption */}
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-2">
             <Badge variant="secondary" className="bg-zinc-800/80 text-zinc-200 border-0 text-xs font-medium px-2 py-0.5">
@@ -220,17 +237,54 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
             )}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <Sparkles className="h-3.5 w-3.5 text-violet-400" />
-            <span className="text-[10px] text-zinc-400 font-medium uppercase tracking-wider">AI Caption</span>
+          {/* Original Caption (read-only) */}
+          <div className="bg-zinc-800/30 rounded-lg p-2 border border-zinc-700/30">
+            <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-medium">Original</span>
+            <p className="text-xs text-zinc-400 mt-1 line-clamp-3 leading-relaxed">
+              {event.original_caption || 'No caption'}
+            </p>
           </div>
 
+          {/* Context Input + Generate Button */}
+          <div className="flex gap-2 items-end">
+            <div className="flex-1">
+              <label className="text-[9px] text-zinc-500 uppercase tracking-wider font-medium mb-1 block">
+                Add Context (optional)
+              </label>
+              <Input
+                value={context}
+                onChange={(e) => setContext(e.target.value)}
+                placeholder="e.g., 'focus on the DJ name', 'mention sold out'"
+                className="h-8 text-xs bg-zinc-800/50 border-zinc-700/50"
+              />
+            </div>
+            <Button
+              onClick={handleGenerateCaption}
+              disabled={isGenerating}
+              size="sm"
+              className="h-8 px-3 bg-violet-600 hover:bg-violet-500"
+            >
+              {isGenerating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Wand2 className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
+
+          {/* AI Generated / Editable Caption */}
           <div className="relative flex-1">
+            <div className="flex items-center gap-1.5 mb-1">
+              <Sparkles className="h-3 w-3 text-violet-400" />
+              <span className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider">
+                {hasAiCaption ? 'AI Caption' : 'Caption'} (editable)
+              </span>
+            </div>
             <Textarea
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
-              placeholder="Write your caption here..."
-              className="h-full min-h-[100px] bg-zinc-800/50 border-zinc-700/50 text-white resize-none text-sm leading-relaxed p-3 rounded-lg focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50"
+              placeholder={hasAiCaption ? 'Edit caption or regenerate...' : 'Click ✨ to generate, or write manually...'}
+              className="h-full min-h-[70px] bg-zinc-800/50 border-zinc-700/50 text-white resize-none text-sm leading-relaxed p-2.5 rounded-lg focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50"
             />
             <span className="absolute right-2 bottom-1.5 text-[10px] text-zinc-500 bg-zinc-900/80 px-1.5 py-0.5 rounded">
               {caption.length}
@@ -271,7 +325,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
             </Popover>
           </div>
 
-          {/* Time - Simple input */}
+          {/* Time */}
           <div>
             <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-1 block">Time</label>
             <div className="relative">
@@ -295,7 +349,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
           {/* Actions */}
           <Button
             onClick={handleApprove}
-            disabled={isLoading || !selectedDate}
+            disabled={isLoading || !selectedDate || !caption.trim()}
             size="sm"
             className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 h-9 text-sm font-semibold shadow-lg shadow-violet-500/20"
           >

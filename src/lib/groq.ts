@@ -105,24 +105,71 @@ Free entry • 10 TVs • Game day specials all night ✨
 Table packages available to reserve.
 
 Example 12 (Hip Hop):
-This isn't a normal night out 🙂‍↔️ Saturday, Jan 24 • @nav is partying it up with Philly 🔥 TICKETS JUST DROPPED. Lock in your spot now, these kinda events have VERY limited availability 🥂 18+`
+This isn't a normal night out 🙂‍↔️ Saturday, Jan 24 • @nav is partying it up with Philly 🔥 TICKETS JUST DROPPED. Lock in your spot now, these kinda events have VERY limited availability 🥂 18+
+
+Example 13 (Flash Sale):
+$10 TICKETS FOR 24 HOURS 👀🔥 Tropical trouble's calling and we're answering with Luau Escape at XOX Philly! Thursday, April 24th • 10PM
+Tickets moving fast • don't get caught slippin 🎟️ Check the profile for the link!
+#drexelnightlife #philly #phillynightlife #phillyevents #philadelphia #luauvibes
+
+Example 14 (House Party):
+RPL Saturdays back at it again 🔥 DJ Big Body Benz on the set, ladies free! Pull up to 3226 Powelton Ave this Saturday 🙌
+College ID required • No backpacks • No outside drinks [Prices per host discretion]
+
+Example 15 (College Party):
+PROJECT X Welcome Week tomorrow and it's gonna be absolutely unhinged 🎊 Use code "DREXLF20" for 20% OFF 🎫
+Concourse Dance Bar • Doors at 10PM
+This isn't just a party — it's the one they'll talk about all year
+
+Example 16 (Last Minute):
+Roaring Loud 2 takes off TONIGHT and it's looking like it's gonna be INSANE⚡️ Doors open at 10PM 🔥 Last 20 tickets just dropped… grab em while you can!
+🎟️ Ticket link in bio
+#drexelnightlife #philly #phillynightlife #phillyevents #roaringloud
+
+Example 17 (Last Chance):
+LAST CHANCE 🚨 Roaring Loud 2 is going down THIS FRIDAY and prices are STILL low! 🎟️ Don't miss the biggest party featuring the best hits from Drake, Kendrick, Future, Uzi, Burna Boy, Yeat, Nav & more!
+🔥 18+ to party | Tickets moving fast, grab yours before it's too late! Link in bio!
+#RoaringLoud #PhillyEvents #DrexelNightlife #BlackoutBangers
+
+Example 18 (Afterparty XO):
+Playboi Carti shuts it down • XO turns it all the way up 🖤 Official afterparty hosted by XO hits NOTO right after the show. Philly, you already know what kind of night this is.
+🎫 21+ • Tickets available now, don't wait
+
+Example 19 (Concert Day-Of):
+PHILLY, IT'S TONIGHT 🔥 Rauw Alejandro at Wells Fargo Center – heat, rhythm, and straight-up REGGAETON FIRE.
+Last call for tix – $124 gets you in the zone.
+#RauwLive #PhillyTurnUp #TonightOnly #LatinVibes
+
+Example 20 (Double Headliner):
+Two legends. One massive night 🎊 Post Malone x Jelly Roll hit Citizens Bank Park on May 24 – and you already KNOW it's gonna be insane.
+Tix from $151. Get 'em while they last.
+#PostyInPhilly #JellyRollLive #PhillyConcerts #BigVibesOnly`
 
 const USER_PROMPT = `Rewrite this caption matching the brand voice and style shown above. Use a UNIQUE hook (don't repeat from recent outputs). Match emoji usage to context. Keep it punchy.
 
 Original from @{source}:
 {caption}
-
+{context}
 Rewritten:`
 
-export async function rewriteCaption(originalCaption: string, sourceAccount: string): Promise<string> {
+export async function rewriteCaption(
+  originalCaption: string,
+  sourceAccount: string,
+  additionalContext?: string
+): Promise<string> {
   if (!originalCaption || originalCaption.trim().length === 0) {
     return `via @${sourceAccount} 🔥`
   }
 
   try {
+    const contextLine = additionalContext 
+      ? `\nAdditional context: ${additionalContext}` 
+      : ''
+    
     const userPrompt = USER_PROMPT
       .replace('{caption}', originalCaption)
       .replace('{source}', sourceAccount)
+      .replace('{context}', contextLine)
 
     const completion = await groq.chat.completions.create({
       messages: [
@@ -157,15 +204,21 @@ export async function rewriteCaption(originalCaption: string, sourceAccount: str
   }
 }
 
-export async function testCaption(originalCaption: string, sourceAccount: string = 'test_venue'): Promise<{
+export async function testCaption(
+  originalCaption: string, 
+  sourceAccount: string = 'test_venue',
+  additionalContext?: string
+): Promise<{
   original: string
   rewritten: string
   source: string
+  context?: string
 }> {
-  const rewritten = await rewriteCaption(originalCaption, sourceAccount)
+  const rewritten = await rewriteCaption(originalCaption, sourceAccount, additionalContext)
   return {
     original: originalCaption,
     rewritten,
     source: sourceAccount,
+    context: additionalContext,
   }
 }

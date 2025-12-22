@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { rewriteCaption } from '@/lib/groq'
 import type { ApifyInstagramPost } from '@/types/apify'
 import type { PostType } from '@/types/database'
 
@@ -125,20 +124,14 @@ async function processPost(
     return { success: false, reason: 'Failed to upload any media' }
   }
 
-  // Generate AI caption
-  const aiCaption = await rewriteCaption(
-    post.caption || '',
-    post.ownerUsername
-  )
-
-  // Insert into database
+  // Insert into database - NO AI generation yet (saves credits, user triggers manually)
   const { error } = await supabase.from('event_discovery').insert({
     status: 'pending',
     source_account: post.ownerUsername,
     post_type: postType,
     original_caption: post.caption,
-    ai_generated_caption: aiCaption,
-    final_caption: aiCaption, // Default to AI caption, user can edit
+    ai_generated_caption: null, // Generated on-demand by user
+    final_caption: null, // User will edit after AI generation
     media_urls: uploadedUrls,
     ig_post_id: igPostId,
     is_pinned: post.isPinned || false,

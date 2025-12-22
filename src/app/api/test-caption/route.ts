@@ -6,7 +6,7 @@ import { testCaption } from '@/lib/groq'
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { caption, source } = body
+    const { caption, source, context } = body
 
     if (!caption) {
       return NextResponse.json(
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const result = await testCaption(caption, source || 'test_venue')
+    const result = await testCaption(caption, source || 'test_venue', context)
 
     return NextResponse.json(result)
   } catch (error) {
