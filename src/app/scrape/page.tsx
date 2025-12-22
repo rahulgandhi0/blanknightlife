@@ -92,7 +92,10 @@ export default function ScrapePage() {
         const data = await res.json()
 
         if (data.ready) {
-          if (data.ingested) {
+          if (data.empty) {
+            setScrapeStatus('No items returned (account private or no posts in range)')
+            setPolling(false)
+          } else if (data.ingested) {
             const result = data.ingestResult
             setScrapeStats({
               found: result?.details?.length || 0,

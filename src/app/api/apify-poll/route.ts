@@ -38,6 +38,16 @@ export async function POST(request: NextRequest) {
 
       const posts = await datasetResp.json()
 
+      if (!Array.isArray(posts) || posts.length === 0) {
+        return NextResponse.json({
+          status,
+          ready: true,
+          empty: true,
+          message: 'No items returned from Apify (account private or no posts in range)',
+          datasetId
+        })
+      }
+
       const baseUrl = process.env.VERCEL_URL 
         ? `https://${process.env.VERCEL_URL}` 
         : 'http://localhost:3000'

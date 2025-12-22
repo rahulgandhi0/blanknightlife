@@ -17,8 +17,15 @@ export async function POST(request: NextRequest) {
     }
 
     const cleanHandle = account.trim().replace(/^@/, '')
+    const lastNDays = Math.max(1, Math.ceil((Number(sinceHours) || 48) / 24))
 
     const input = {
+      usernames: [cleanHandle], // For apify/instagram-post-scraper
+      resultsType: 'posts',
+      resultsLimit: 50,
+      scrapePostsFromLastNDays: lastNDays,
+      proxy: { useApifyProxy: true },
+      // Fallback keys for custom actors
       handle: cleanHandle,
       sinceHours,
     }
