@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import { 
   Clock, 
-  CheckCircle2, 
   Calendar, 
   Send, 
   Archive,
@@ -15,7 +14,6 @@ import {
 const navigation = [
   { name: 'Overview', href: '/', icon: LayoutDashboard },
   { name: 'Pending', href: '/pending', icon: Clock, badge: true },
-  { name: 'Approved', href: '/approved', icon: CheckCircle2 },
   { name: 'Scheduled', href: '/scheduled', icon: Calendar },
   { name: 'Posted', href: '/posted', icon: Send },
   { name: 'Archived', href: '/archived', icon: Archive },

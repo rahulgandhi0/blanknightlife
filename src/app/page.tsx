@@ -1,6 +1,6 @@
 import { createServiceClient } from '@/lib/supabase/server'
 import { Card } from '@/components/ui/card'
-import { Clock, CheckCircle2, Calendar, Send, Archive, TrendingUp } from 'lucide-react'
+import { Clock, Calendar, Send, Archive, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
@@ -9,23 +9,20 @@ export const revalidate = 0
 async function getStats() {
   const supabase = createServiceClient()
   
-  const [pending, approved, scheduled, posted, archived] = await Promise.all([
+  const [pending, scheduled, posted, archived] = await Promise.all([
     supabase.from('event_discovery').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    supabase.from('event_discovery').select('id', { count: 'exact', head: true }).eq('status', 'approved'),
     supabase.from('event_discovery').select('id', { count: 'exact', head: true }).eq('status', 'scheduled'),
     supabase.from('event_discovery').select('id', { count: 'exact', head: true }).eq('status', 'posted'),
     supabase.from('event_discovery').select('id', { count: 'exact', head: true }).eq('status', 'archived'),
   ])
 
   if (pending.error) console.error('Pending count error:', pending.error)
-  if (approved.error) console.error('Approved count error:', approved.error)
   if (scheduled.error) console.error('Scheduled count error:', scheduled.error)
   if (posted.error) console.error('Posted count error:', posted.error)
   if (archived.error) console.error('Archived count error:', archived.error)
 
   return {
     pending: pending.count || 0,
-    approved: approved.count || 0,
     scheduled: scheduled.count || 0,
     posted: posted.count || 0,
     archived: archived.count || 0,
@@ -34,14 +31,13 @@ async function getStats() {
 
 const statCards = [
   { key: 'pending', label: 'Pending Review', icon: Clock, href: '/pending', color: 'from-amber-500 to-orange-500' },
-  { key: 'approved', label: 'Approved', icon: CheckCircle2, href: '/approved', color: 'from-emerald-500 to-green-500' },
   { key: 'scheduled', label: 'Scheduled', icon: Calendar, href: '/scheduled', color: 'from-violet-500 to-purple-500' },
   { key: 'posted', label: 'Posted', icon: Send, href: '/posted', color: 'from-blue-500 to-cyan-500' },
   { key: 'archived', label: 'Archived', icon: Archive, href: '/archived', color: 'from-zinc-500 to-zinc-600' },
 ]
 
 export default async function HomePage() {
-  let stats = { pending: 0, approved: 0, scheduled: 0, posted: 0, archived: 0 }
+  let stats = { pending: 0, scheduled: 0, posted: 0, archived: 0 }
   
   try {
     stats = await getStats()
@@ -62,7 +58,7 @@ export default async function HomePage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         {statCards.map((stat) => {
           const Icon = stat.icon
           const count = stats[stat.key as keyof typeof stats]
