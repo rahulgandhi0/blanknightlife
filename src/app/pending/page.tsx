@@ -198,8 +198,8 @@ export default function PendingPage() {
             <EventCard
               event={selectedEvent}
               onApprove={handleApprove}
-              onDiscard={(id) => {
-                handleDiscard(id)
+              onDiscard={async (id) => {
+                await handleDiscard(id)
                 setSelectedEvent(null)
               }}
             />
