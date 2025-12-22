@@ -2,14 +2,14 @@
 
 import { useState } from 'react'
 import Image from 'next/image'
-import { format, setHours, setMinutes } from 'date-fns'
+import { format, setHours, setMinutes, parse } from 'date-fns'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { 
   Calendar as CalendarIcon, 
   Check, 
@@ -29,25 +29,15 @@ interface EventCardProps {
   onUpdate?: (id: string, updates: Partial<EventDiscovery>) => Promise<void>
 }
 
-// Generate time slots in 15-minute intervals
-const timeSlots = Array.from({ length: 96 }, (_, i) => {
-  const hours = Math.floor(i / 4)
-  const minutes = (i % 4) * 15
-  return {
-    value: `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`,
-    label: format(setMinutes(setHours(new Date(), hours), minutes), 'h:mm a')
-  }
-})
-
 export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const [caption, setCaption] = useState(event.final_caption || event.ai_generated_caption || '')
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     event.scheduled_for ? new Date(event.scheduled_for) : undefined
   )
-  const [selectedTime, setSelectedTime] = useState<string>(
+  const [timeInput, setTimeInput] = useState<string>(
     event.scheduled_for 
-      ? format(new Date(event.scheduled_for), 'HH:mm')
-      : '12:00'
+      ? format(new Date(event.scheduled_for), 'h:mm a')
+      : '12:00 PM'
   )
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
@@ -60,12 +50,19 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
       alert('Please select a date to schedule')
       return
     }
-    setIsLoading(true)
+    
+    // Parse the time input
     try {
-      // Combine date and time
-      const [hours, minutes] = selectedTime.split(':').map(Number)
-      const scheduledDateTime = setMinutes(setHours(selectedDate, hours), minutes)
+      const parsedTime = parse(timeInput, 'h:mm a', new Date())
+      const scheduledDateTime = setMinutes(
+        setHours(selectedDate, parsedTime.getHours()), 
+        parsedTime.getMinutes()
+      )
+      
+      setIsLoading(true)
       await onApprove(event.id, caption, scheduledDateTime)
+    } catch (error) {
+      alert('Invalid time format. Please use format like "2:30 PM"')
     } finally {
       setIsLoading(false)
     }
@@ -89,10 +86,10 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   }
 
   return (
-    <Card className="overflow-hidden bg-zinc-900/80 border-zinc-800 backdrop-blur">
-      <div className="flex gap-5 p-4">
+    <Card className="overflow-hidden bg-gradient-to-br from-zinc-900 to-zinc-900/50 border-zinc-800/50 backdrop-blur-sm hover:border-zinc-700/50 transition-all">
+      <div className="flex gap-6 p-5">
         {/* Left: Image */}
-        <div className="relative w-44 h-44 flex-shrink-0 rounded-xl overflow-hidden bg-black shadow-lg">
+        <div className="relative w-48 h-48 flex-shrink-0 rounded-xl overflow-hidden bg-black shadow-2xl ring-1 ring-white/5">
           {mediaUrls.length > 0 ? (
             <>
               <Image
@@ -107,23 +104,23 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
                 <>
                   <button
                     onClick={prevImage}
-                    className="absolute left-1.5 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full bg-black/70 flex items-center justify-center text-white hover:bg-black/90 transition"
+                    className="absolute left-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-black/80 backdrop-blur flex items-center justify-center text-white hover:bg-black transition-all hover:scale-110"
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </button>
                   <button
                     onClick={nextImage}
-                    className="absolute right-1.5 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full bg-black/70 flex items-center justify-center text-white hover:bg-black/90 transition"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 rounded-full bg-black/80 backdrop-blur flex items-center justify-center text-white hover:bg-black transition-all hover:scale-110"
                   >
                     <ChevronRight className="h-4 w-4" />
                   </button>
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1">
+                  <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 bg-black/60 backdrop-blur px-2 py-1 rounded-full">
                     {mediaUrls.map((_, idx) => (
                       <div
                         key={idx}
                         className={cn(
-                          'h-1.5 w-1.5 rounded-full transition-all',
-                          idx === currentImageIndex ? 'bg-white w-3' : 'bg-white/50'
+                          'h-1.5 rounded-full transition-all',
+                          idx === currentImageIndex ? 'bg-white w-4' : 'bg-white/40 w-1.5'
                         )}
                       />
                     ))}
@@ -133,13 +130,13 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
               
               {/* Carousel badge */}
               {event.post_type === 'carousel' && (
-                <Badge className="absolute top-2 right-2 bg-violet-500 text-white border-0 text-[10px] px-1.5">
-                  {mediaUrls.length}
+                <Badge className="absolute top-3 right-3 bg-violet-500/90 backdrop-blur text-white border-0 text-xs px-2 py-0.5 shadow-lg">
+                  {mediaUrls.length} photos
                 </Badge>
               )}
             </>
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-zinc-600 text-xs">
+            <div className="absolute inset-0 flex items-center justify-center text-zinc-600 text-sm">
               No image
             </div>
           )}
@@ -147,47 +144,52 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
 
         {/* Middle: Caption */}
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="flex items-center gap-2 mb-2">
-            <Badge variant="secondary" className="bg-zinc-800 text-zinc-300 border-0 text-xs font-medium">
-              @{event.source_account}
-            </Badge>
-            {event.posted_at_source && (
-              <span className="text-xs text-zinc-500">
-                {format(new Date(event.posted_at_source), 'MMM d, yyyy')}
-              </span>
-            )}
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Badge variant="secondary" className="bg-zinc-800/80 text-zinc-200 border-0 text-sm font-medium px-2.5 py-1">
+                @{event.source_account}
+              </Badge>
+              {event.posted_at_source && (
+                <span className="text-xs text-zinc-500">
+                  {format(new Date(event.posted_at_source), 'MMM d, yyyy')}
+                </span>
+              )}
+            </div>
           </div>
           
-          <div className="flex items-center gap-1.5 mb-2">
-            <Sparkles className="h-3.5 w-3.5 text-violet-400" />
-            <span className="text-xs text-zinc-400 font-medium">AI Generated Caption</span>
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="h-4 w-4 text-violet-400" />
+            <span className="text-xs text-zinc-400 font-medium uppercase tracking-wider">AI Generated</span>
           </div>
           
           <Textarea
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
-            placeholder="Write a caption..."
-            className="flex-1 min-h-[100px] bg-zinc-800/50 border-zinc-700 text-white resize-none text-sm p-3 rounded-lg"
+            placeholder="Write your caption here..."
+            className="flex-1 min-h-[110px] bg-zinc-800/50 border-zinc-700/50 text-white resize-none text-sm leading-relaxed p-3.5 rounded-xl focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50 transition-all"
           />
-          <p className="text-[10px] text-zinc-500 mt-1.5 ml-1">{caption.length} characters</p>
+          <div className="flex items-center justify-between mt-2">
+            <p className="text-xs text-zinc-500">{caption.length} characters</p>
+          </div>
         </div>
 
         {/* Right: Schedule & Actions */}
-        <div className="flex flex-col gap-3 w-44 flex-shrink-0">
+        <div className="flex flex-col gap-4 w-52 flex-shrink-0">
           {/* Date Picker */}
           <div>
-            <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-1.5 block">Date</label>
+            <label className="text-xs uppercase tracking-wider text-zinc-400 font-semibold mb-2 block">
+              Schedule Date
+            </label>
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
-                  size="sm"
                   className={cn(
-                    'w-full justify-start text-left font-normal bg-zinc-800/50 border-zinc-700 h-9 text-sm',
+                    'w-full justify-start text-left font-normal bg-zinc-800/50 border-zinc-700/50 h-11 text-sm hover:bg-zinc-800 hover:border-zinc-600 transition-all',
                     !selectedDate && 'text-zinc-500'
                   )}
                 >
-                  <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                  <CalendarIcon className="mr-2.5 h-4 w-4 text-zinc-400" />
                   {selectedDate ? format(selectedDate, 'MMM d, yyyy') : 'Select date'}
                 </Button>
               </PopoverTrigger>
@@ -203,48 +205,48 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
             </Popover>
           </div>
 
-          {/* Time Picker */}
+          {/* Time Input */}
           <div>
-            <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-1.5 block">Time</label>
-            <Select value={selectedTime} onValueChange={setSelectedTime}>
-              <SelectTrigger className="w-full bg-zinc-800/50 border-zinc-700 h-9 text-sm">
-                <Clock className="mr-2 h-3.5 w-3.5 text-zinc-400" />
-                <SelectValue placeholder="Select time" />
-              </SelectTrigger>
-              <SelectContent className="bg-zinc-900 border-zinc-800 max-h-60">
-                {timeSlots.map((slot) => (
-                  <SelectItem key={slot.value} value={slot.value} className="text-sm">
-                    {slot.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <label className="text-xs uppercase tracking-wider text-zinc-400 font-semibold mb-2 block">
+              Time
+            </label>
+            <div className="relative">
+              <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
+              <Input
+                type="text"
+                value={timeInput}
+                onChange={(e) => setTimeInput(e.target.value)}
+                placeholder="2:30 PM"
+                className="w-full bg-zinc-800/50 border-zinc-700/50 h-11 text-sm pl-10 focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50 transition-all"
+              />
+            </div>
+            <p className="text-[10px] text-zinc-600 mt-1.5 ml-1">Format: 2:30 PM</p>
           </div>
 
           {/* Spacer */}
           <div className="flex-1" />
 
           {/* Actions */}
-          <Button
-            onClick={handleApprove}
-            disabled={isLoading || !selectedDate}
-            size="sm"
-            className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 h-10 text-sm font-medium shadow-lg shadow-violet-500/20"
-          >
-            <Check className="h-4 w-4 mr-1.5" />
-            Approve
-          </Button>
-          
-          <Button
-            onClick={handleDiscard}
-            disabled={isLoading}
-            size="sm"
-            variant="outline"
-            className="w-full bg-zinc-800/50 border-zinc-700 hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-400 h-9 text-sm transition-colors"
-          >
-            <X className="h-4 w-4 mr-1.5" />
-            Discard
-          </Button>
+          <div className="space-y-2.5">
+            <Button
+              onClick={handleApprove}
+              disabled={isLoading || !selectedDate}
+              className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 h-11 text-sm font-semibold shadow-lg shadow-violet-500/25 hover:shadow-violet-500/40 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <Check className="h-4 w-4 mr-2" />
+              Approve & Schedule
+            </Button>
+            
+            <Button
+              onClick={handleDiscard}
+              disabled={isLoading}
+              variant="outline"
+              className="w-full bg-zinc-800/30 border-zinc-700/50 hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-400 h-10 text-sm font-medium transition-all"
+            >
+              <X className="h-4 w-4 mr-2" />
+              Discard
+            </Button>
+          </div>
         </div>
       </div>
     </Card>
