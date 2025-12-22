@@ -47,8 +47,8 @@ export async function POST(request: NextRequest) {
       .from('event_discovery')
       .update({
         ai_generated_caption: aiCaption,
-        final_caption: aiCaption, // Set as default, user can edit
-      } as Partial<EventDiscovery>)
+        final_caption: aiCaption,
+      } as never)
       .eq('id', eventId)
       .select()
       .single()
