@@ -73,7 +73,7 @@ export function EventCard({ event, onApprove, onDiscard, onUpdate }: EventCardPr
     <Card className="overflow-hidden bg-zinc-900 border-zinc-800">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
         {/* Left: Image/Carousel */}
-        <div className="relative aspect-square bg-black">
+        <div className="relative aspect-[4/3] lg:aspect-square bg-black">
           {mediaUrls.length > 0 ? (
             <>
               <Image
@@ -132,49 +132,50 @@ export function EventCard({ event, onApprove, onDiscard, onUpdate }: EventCardPr
         </div>
 
         {/* Right: Caption & Actions */}
-        <div className="flex flex-col p-5">
+        <div className="flex flex-col p-4">
           {/* Original caption (collapsed) */}
-          <details className="mb-4 group">
+          <details className="mb-3 group">
             <summary className="text-xs text-zinc-500 cursor-pointer hover:text-zinc-400 flex items-center gap-1">
               <span>Original caption</span>
               <ExternalLink className="h-3 w-3" />
             </summary>
-            <p className="mt-2 text-xs text-zinc-600 max-h-24 overflow-y-auto">
+            <p className="mt-1.5 text-xs text-zinc-600 max-h-16 overflow-y-auto">
               {event.original_caption || 'No caption'}
             </p>
           </details>
 
           {/* AI Caption Editor */}
-          <div className="flex-1 mb-4">
-            <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="h-4 w-4 text-violet-400" />
-              <label className="text-sm font-medium text-zinc-300">Caption</label>
+          <div className="flex-1 mb-3">
+            <div className="flex items-center gap-2 mb-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-violet-400" />
+              <label className="text-xs font-medium text-zinc-300">Caption</label>
             </div>
             <Textarea
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
               placeholder="Write a caption..."
-              className="min-h-[120px] bg-zinc-800 border-zinc-700 text-white resize-none"
+              className="min-h-[80px] bg-zinc-800 border-zinc-700 text-white resize-none text-sm"
             />
-            <p className="text-xs text-zinc-500 mt-1.5">
+            <p className="text-xs text-zinc-500 mt-1">
               {caption.length} characters
             </p>
           </div>
 
           {/* Date Picker */}
-          <div className="mb-4">
-            <label className="text-sm font-medium text-zinc-300 mb-2 block">Schedule for</label>
+          <div className="mb-3">
+            <label className="text-xs font-medium text-zinc-300 mb-1.5 block">Schedule for</label>
             <Popover>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
+                  size="sm"
                   className={cn(
-                    'w-full justify-start text-left font-normal bg-zinc-800 border-zinc-700',
+                    'w-full justify-start text-left font-normal bg-zinc-800 border-zinc-700 h-8',
                     !selectedDate && 'text-zinc-500'
                   )}
                 >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {selectedDate ? format(selectedDate, 'PPP') : 'Pick a date'}
+                  <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                  <span className="text-xs">{selectedDate ? format(selectedDate, 'PPP') : 'Pick a date'}</span>
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0 bg-zinc-900 border-zinc-800" align="start">
@@ -191,8 +192,8 @@ export function EventCard({ event, onApprove, onDiscard, onUpdate }: EventCardPr
 
           {/* Source timestamp */}
           {event.posted_at_source && (
-            <p className="text-xs text-zinc-600 mb-4">
-              Posted: {format(new Date(event.posted_at_source), 'MMM d, yyyy h:mm a')}
+            <p className="text-xs text-zinc-600 mb-3">
+              Posted: {format(new Date(event.posted_at_source), 'MMM d, yyyy')}
             </p>
           )}
 
@@ -201,18 +202,20 @@ export function EventCard({ event, onApprove, onDiscard, onUpdate }: EventCardPr
             <Button
               onClick={handleApprove}
               disabled={isLoading || !selectedDate}
-              className="flex-1 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500"
+              size="sm"
+              className="flex-1 bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 h-9"
             >
-              <Check className="h-4 w-4 mr-2" />
-              Approve & Schedule
+              <Check className="h-3.5 w-3.5 mr-1.5" />
+              <span className="text-xs">Approve & Schedule</span>
             </Button>
             <Button
               onClick={handleDiscard}
               disabled={isLoading}
+              size="sm"
               variant="outline"
-              className="bg-zinc-800 border-zinc-700 hover:bg-zinc-700 hover:text-red-400"
+              className="bg-zinc-800 border-zinc-700 hover:bg-zinc-700 hover:text-red-400 h-9 px-3"
             >
-              <X className="h-4 w-4" />
+              <X className="h-3.5 w-3.5" />
             </Button>
           </div>
         </div>
