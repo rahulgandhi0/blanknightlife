@@ -3,12 +3,18 @@ import { createServiceClient } from '@/lib/supabase/server'
 import { rewriteCaption } from '@/lib/groq'
 import type { EventDiscovery } from '@/types/database'
 
+interface CaptionEdit {
+  ai_caption: string
+  user_edited_caption: string
+  original_caption: string | null
+}
+
 // POST /api/generate-caption
 // Generate AI caption on-demand for a specific event
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { eventId, context } = body
+    const { eventId, context, useRL = true } = body
 
     if (!eventId) {
       return NextResponse.json(
@@ -35,11 +41,32 @@ export async function POST(request: NextRequest) {
 
     const event = data as EventDiscovery
 
-    // Generate AI caption with optional context
+    // Fetch recent significant edits for RL (learn from past corrections)
+    let learnedExamples: string | undefined
+    if (useRL) {
+      const { data: recentEdits } = await supabase
+        .from('caption_edits')
+        .select('ai_caption, user_edited_caption, original_caption')
+        .eq('was_significant_edit', true)
+        .order('created_at', { ascending: false })
+        .limit(3)
+
+      if (recentEdits && recentEdits.length > 0) {
+        const examples = (recentEdits as CaptionEdit[]).map((edit, i) => 
+          `Correction ${i + 1}:\nAI wrote: "${edit.ai_caption}"\nUser preferred: "${edit.user_edited_caption}"`
+        ).join('\n\n')
+        learnedExamples = `\n\nLEARN FROM THESE RECENT USER CORRECTIONS:\n${examples}`
+      }
+    }
+
+    // Build context with learned examples
+    const fullContext = [context, learnedExamples].filter(Boolean).join('\n')
+
+    // Generate AI caption with optional context + learned patterns
     const aiCaption = await rewriteCaption(
       event.original_caption || '',
       event.source_account,
-      context || undefined
+      fullContext || undefined
     )
 
     // Update the event with the generated caption

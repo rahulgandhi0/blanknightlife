@@ -150,6 +150,20 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
     
     setIsLoading(true)
     try {
+      // Track edit for RL if AI caption was generated and edited
+      if (event.ai_generated_caption && caption !== event.ai_generated_caption) {
+        fetch('/api/track-edit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventId: event.id,
+            aiCaption: event.ai_generated_caption,
+            userCaption: caption,
+            context: context || undefined,
+          }),
+        }).catch(console.error) // Fire and forget
+      }
+      
       await onApprove(event.id, caption, scheduledDateTime)
     } finally {
       setIsLoading(false)
@@ -245,31 +259,44 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
             </p>
           </div>
 
-          {/* Context Input + Generate Button */}
-          <div className="flex gap-2 items-end">
-            <div className="flex-1">
-              <label className="text-[9px] text-zinc-500 uppercase tracking-wider font-medium mb-1 block">
-                Add Context (optional)
-              </label>
+          {/* Context Tags + Input + Generate */}
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {['link in bio', 'last chance', 'flash sale', 'event launch'].map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => setContext(prev => prev ? `${prev}, ${tag}` : tag)}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-[10px] font-medium transition-all",
+                    context.includes(tag) 
+                      ? "bg-violet-500/30 text-violet-300 border border-violet-500/50" 
+                      : "bg-zinc-800/60 text-zinc-400 hover:bg-zinc-700/60 hover:text-zinc-300 border border-transparent"
+                  )}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+            <div className="flex gap-2 items-center">
               <Input
                 value={context}
                 onChange={(e) => setContext(e.target.value)}
-                placeholder="e.g., 'focus on the DJ name', 'mention sold out'"
-                className="h-8 text-xs bg-zinc-800/50 border-zinc-700/50"
+                placeholder="custom context..."
+                className="h-7 text-xs bg-zinc-800/50 border-zinc-700/50 flex-1"
               />
+              <Button
+                onClick={handleGenerateCaption}
+                disabled={isGenerating}
+                size="sm"
+                className="h-7 px-2.5 bg-violet-600 hover:bg-violet-500"
+              >
+                {isGenerating ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Wand2 className="h-3.5 w-3.5" />
+                )}
+              </Button>
             </div>
-            <Button
-              onClick={handleGenerateCaption}
-              disabled={isGenerating}
-              size="sm"
-              className="h-8 px-3 bg-violet-600 hover:bg-violet-500"
-            >
-              {isGenerating ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Wand2 className="h-3.5 w-3.5" />
-              )}
-            </Button>
           </div>
 
           {/* AI Generated / Editable Caption */}
