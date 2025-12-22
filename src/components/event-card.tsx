@@ -269,7 +269,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 items-stretch">
+        <div className="flex flex-col gap-2 items-stretch justify-end h-full">
           <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
             <PopoverTrigger asChild>
               <Button
