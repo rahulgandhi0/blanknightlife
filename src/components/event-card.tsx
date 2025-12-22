@@ -90,10 +90,35 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [captionStats, setCaptionStats] = useState<{
+    minRecommended: number
+    maxRecommended: number
+    avgLength: number
+  } | null>(null)
 
   const mediaUrls = event.media_urls || []
   const hasMultipleImages = mediaUrls.length > 1
   const hasAiCaption = !!event.ai_generated_caption
+
+  // Fetch caption stats on mount
+  useState(() => {
+    fetch('/api/caption-stats')
+      .then(res => res.json())
+      .then(data => setCaptionStats(data))
+      .catch(console.error)
+  })
+
+  const captionLength = caption.length
+  const isWithinRange = captionStats 
+    ? captionLength >= captionStats.minRecommended && captionLength <= captionStats.maxRecommended
+    : true
+  const lengthColor = !captionStats 
+    ? 'text-zinc-500'
+    : isWithinRange 
+      ? 'text-green-400' 
+      : captionLength < captionStats.minRecommended 
+        ? 'text-amber-400' 
+        : 'text-red-400'
 
   const handleTimeChange = (value: string) => setTimeRaw(value)
 
@@ -183,10 +208,10 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const prevImage = () => setCurrentImageIndex((prev) => (prev - 1 + mediaUrls.length) % mediaUrls.length)
 
   return (
-    <Card className="overflow-hidden bg-gradient-to-br from-zinc-900 to-zinc-900/60 border border-zinc-800/60 backdrop-blur-sm hover:border-zinc-700/70 transition-all">
-      <div className="grid grid-cols-[180px_1fr_200px] gap-5 p-4 items-stretch min-h-[240px]">
-        {/* Left: Image */}
-        <div className="relative w-full h-full min-h-[200px] rounded-xl overflow-hidden bg-black shadow-2xl ring-1 ring-white/5">
+    <Card className="overflow-hidden bg-gradient-to-br from-zinc-900 to-zinc-900/60 border border-zinc-800/60 backdrop-blur-sm hover:border-zinc-700/70 transition-all h-full">
+      <div className="grid grid-cols-[200px_1fr_220px] gap-6 p-5 items-stretch min-h-[260px]">
+        {/* Left: Image - Fixed Aspect Ratio */}
+        <div className="relative w-full aspect-[4/5] rounded-xl overflow-hidden bg-black shadow-2xl ring-1 ring-white/5">
           {mediaUrls.length > 0 ? (
             <>
               <Image
@@ -239,9 +264,10 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
         </div>
 
         {/* Middle: Original + Context + Generated Caption */}
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2">
-            <Badge variant="secondary" className="bg-zinc-800/80 text-zinc-200 border-0 text-xs font-medium px-2 py-0.5">
+        <div className="flex flex-col gap-2.5">
+          {/* Meta Info - Aligned Vertical Rail */}
+          <div className="flex flex-col gap-1">
+            <Badge variant="secondary" className="bg-zinc-800/80 text-zinc-200 border-0 text-xs font-medium px-2 py-0.5 w-fit">
               @{event.source_account}
             </Badge>
             {event.posted_at_source && (
@@ -252,25 +278,25 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
           </div>
 
           {/* Original Caption (read-only) */}
-          <div className="bg-zinc-800/30 rounded-lg p-2 border border-zinc-700/30">
+          <div className="bg-zinc-800/40 rounded-lg p-2.5 border border-zinc-700/40">
             <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-medium">Original</span>
-            <p className="text-xs text-zinc-400 mt-1 line-clamp-3 leading-relaxed">
+            <p className="text-xs text-zinc-400 mt-1.5 line-clamp-3 leading-relaxed">
               {event.original_caption || 'No caption'}
             </p>
           </div>
 
           {/* Context Tags + Input + Generate */}
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-1.5 flex-wrap">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               {['link in bio', 'last chance', 'flash sale', 'event launch'].map((tag) => (
                 <button
                   key={tag}
                   onClick={() => setContext(prev => prev ? `${prev}, ${tag}` : tag)}
                   className={cn(
-                    "px-2 py-0.5 rounded text-[10px] font-medium transition-all",
+                    "px-2.5 py-1 rounded-md text-[10px] font-medium transition-all",
                     context.includes(tag) 
-                      ? "bg-violet-500/30 text-violet-300 border border-violet-500/50" 
-                      : "bg-zinc-800/60 text-zinc-400 hover:bg-zinc-700/60 hover:text-zinc-300 border border-transparent"
+                      ? "bg-violet-500/30 text-violet-300 border border-violet-500/50 shadow-sm" 
+                      : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-300 border border-zinc-700/50"
                   )}
                 >
                   {tag}
@@ -282,13 +308,13 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
                 value={context}
                 onChange={(e) => setContext(e.target.value)}
                 placeholder="custom context..."
-                className="h-7 text-xs bg-zinc-800/50 border-zinc-700/50 flex-1"
+                className="h-8 text-xs bg-zinc-800/60 border-[1.5px] border-zinc-700/60 flex-1 focus:border-violet-500/50 focus:bg-zinc-800/80"
               />
               <Button
                 onClick={handleGenerateCaption}
                 disabled={isGenerating}
                 size="sm"
-                className="h-7 px-2.5 bg-violet-600 hover:bg-violet-500"
+                className="h-8 px-3 bg-violet-600 hover:bg-violet-500"
               >
                 {isGenerating ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -301,7 +327,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
 
           {/* AI Generated / Editable Caption */}
           <div className="relative flex-1">
-            <div className="flex items-center gap-1.5 mb-1">
+            <div className="flex items-center gap-1.5 mb-1.5">
               <Sparkles className="h-3 w-3 text-violet-400" />
               <span className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider">
                 {hasAiCaption ? 'AI Caption' : 'Caption'} (editable)
@@ -311,30 +337,37 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
               placeholder={hasAiCaption ? 'Edit caption or regenerate...' : 'Click ✨ to generate, or write manually...'}
-              className="h-full min-h-[70px] bg-zinc-800/50 border-zinc-700/50 text-white resize-none text-sm leading-relaxed p-2.5 rounded-lg focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50"
+              className="h-full min-h-[75px] bg-zinc-800/60 border-[1.5px] border-zinc-700/60 text-white resize-none text-sm leading-relaxed p-3 pb-7 rounded-lg focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50 focus:bg-zinc-800/80"
             />
-            <span className="absolute right-2 bottom-1.5 text-[10px] text-zinc-500 bg-zinc-900/80 px-1.5 py-0.5 rounded">
-              {caption.length}
-            </span>
+            <div className="absolute right-2.5 bottom-2 flex items-center gap-2">
+              {captionStats && (
+                <span className="text-[9px] text-zinc-600">
+                  {captionStats.minRecommended}-{captionStats.maxRecommended}
+                </span>
+              )}
+              <span className={cn("text-[10px] font-medium bg-zinc-900/90 px-2 py-0.5 rounded", lengthColor)}>
+                {caption.length}
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Right: Schedule & Actions */}
         <div className="flex flex-col gap-3">
           {/* Date */}
-          <div>
-            <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-1 block">Date</label>
+          <div className="flex flex-col">
+            <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-1.5">Date</label>
             <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
                   className={cn(
-                    'w-full justify-start text-left font-normal bg-zinc-800/50 border-zinc-700/50 h-9 text-sm',
+                    'w-full justify-start text-left font-normal bg-zinc-800/60 border-[1.5px] border-zinc-700/60 h-10 text-sm focus:border-violet-500/50 focus:bg-zinc-800/80',
                     !selectedDate && 'text-zinc-500'
                   )}
                 >
-                  <CalendarIcon className="mr-2 h-3.5 w-3.5 text-zinc-400" />
-                  {selectedDate ? format(selectedDate, 'MMM d, yyyy') : 'Select'}
+                  <CalendarIcon className="mr-2 h-4 w-4 text-zinc-400" />
+                  {selectedDate ? format(selectedDate, 'MMM d, yyyy') : 'Select date'}
                 </Button>
               </PopoverTrigger>
               <PopoverContent className="w-auto p-0 bg-zinc-900 border-zinc-800" align="end">
@@ -353,10 +386,10 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
           </div>
 
           {/* Time */}
-          <div>
-            <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-medium mb-1 block">Time</label>
+          <div className="flex flex-col">
+            <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-1.5">Time</label>
             <div className="relative">
-              <Clock className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-400" />
+              <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
               <Input
                 type="text"
                 value={timeRaw || timeDisplay}
@@ -365,35 +398,37 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
                 onKeyDown={handleTimeKeyDown}
                 onFocus={() => setTimeRaw('')}
                 placeholder="1430"
-                className="w-full bg-zinc-800/50 border-zinc-700/50 h-9 text-sm pl-8 focus:ring-2 focus:ring-violet-500/20"
+                className="w-full bg-zinc-800/60 border-[1.5px] border-zinc-700/60 h-10 text-sm pl-10 focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50 focus:bg-zinc-800/80"
               />
             </div>
-            <p className="text-[9px] text-zinc-600 mt-0.5">Type 24h (1430 → 2:30 PM)</p>
+            <p className="text-[9px] text-zinc-600 mt-1">Type 24h (1430 → 2:30 PM)</p>
           </div>
 
           <div className="flex-1" />
 
-          {/* Actions */}
-          <Button
-            onClick={handleApprove}
-            disabled={isLoading || !selectedDate || !caption.trim()}
-            size="sm"
-            className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 h-9 text-sm font-semibold shadow-lg shadow-violet-500/20"
-          >
-            <Check className="h-3.5 w-3.5 mr-1.5" />
-            Approve
-          </Button>
-          
-          <Button
-            onClick={handleDiscard}
-            disabled={isLoading}
-            size="sm"
-            variant="outline"
-            className="w-full bg-zinc-800/30 border-zinc-700/50 hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-400 h-8 text-xs"
-          >
-            <X className="h-3.5 w-3.5 mr-1.5" />
-            Discard
-          </Button>
+          {/* Actions - Uniform Width */}
+          <div className="flex flex-col gap-2.5">
+            <Button
+              onClick={handleApprove}
+              disabled={isLoading || !selectedDate || !caption.trim()}
+              size="sm"
+              className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 h-10 text-sm font-semibold shadow-lg shadow-violet-500/20"
+            >
+              <Check className="h-4 w-4 mr-2" />
+              Approve & Schedule
+            </Button>
+            
+            <Button
+              onClick={handleDiscard}
+              disabled={isLoading}
+              size="sm"
+              variant="outline"
+              className="w-full bg-zinc-800/30 border-[1.5px] border-zinc-700/50 hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-400 h-9 text-sm"
+            >
+              <X className="h-4 w-4 mr-2" />
+              Discard
+            </Button>
+          </div>
         </div>
       </div>
     </Card>

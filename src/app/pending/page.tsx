@@ -82,19 +82,21 @@ export default function PendingPage() {
   return (
     <div className="p-8">
       <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
-            <Clock className="h-8 w-8 text-amber-500" />
-            Pending Review
-          </h1>
-          <p className="text-zinc-400">
-            {events.length} post{events.length !== 1 ? 's' : ''} awaiting your approval
-          </p>
+        <div className="flex items-center gap-4">
+          <Clock className="h-8 w-8 text-amber-500 flex-shrink-0" />
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">
+              Pending Review
+            </h1>
+            <p className="text-zinc-400 text-sm mt-1">
+              {events.length} post{events.length !== 1 ? 's' : ''} awaiting your approval
+            </p>
+          </div>
         </div>
         <Button
           onClick={handleRefresh}
           variant="outline"
-          className="bg-zinc-900 border-zinc-800"
+          className="bg-zinc-900 border-zinc-800 flex-shrink-0"
           disabled={refreshing}
         >
           <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
