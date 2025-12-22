@@ -35,7 +35,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
     event.scheduled_for ? new Date(event.scheduled_for) : undefined
   )
   const [timeInput, setTimeInput] = useState<string>(
-    event.scheduled_for 
+    event.scheduled_for
       ? format(new Date(event.scheduled_for), 'h:mm a')
       : '12:00 PM'
   )
@@ -44,6 +44,51 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
 
   const mediaUrls = event.media_urls || []
   const hasMultipleImages = mediaUrls.length > 1
+
+  // Format arbitrary input into canonical `hh:mm AM/PM`
+  const formatTimeInput = (value: string) => {
+    const trimmed = value.trim()
+    const meridiemMatch = trimmed.match(/(am|pm)/i)
+    const providedMeridiem = meridiemMatch ? meridiemMatch[0].toUpperCase() : null
+    const digits = trimmed.replace(/[^0-9]/g, '')
+
+    if (!digits) return ''
+
+    // Extract hours/minutes from digits
+    let hours: number
+    let minutes: number
+
+    if (digits.length <= 2) {
+      hours = Number(digits)
+      minutes = 0
+    } else {
+      hours = Number(digits.slice(0, digits.length - 2))
+      minutes = Number(digits.slice(-2))
+    }
+
+    // Clamp minutes
+    minutes = Math.min(Math.max(minutes, 0), 59)
+
+    // Determine meridiem if not provided
+    let meridiem = providedMeridiem
+    if (!meridiem) {
+      meridiem = hours >= 12 ? 'PM' : 'AM'
+    }
+
+    // Convert to 12h format
+    let displayHours = hours % 12
+    if (displayHours === 0) displayHours = 12
+
+    const paddedHours = displayHours.toString().padStart(2, '0')
+    const paddedMinutes = minutes.toString().padStart(2, '0')
+
+    return `${paddedHours}:${paddedMinutes} ${meridiem}`
+  }
+
+  const handleTimeInputChange = (value: string) => {
+    const formatted = formatTimeInput(value)
+    setTimeInput(formatted)
+  }
 
   const handleApprove = async () => {
     if (!selectedDate) {
@@ -215,7 +260,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
               <Input
                 type="text"
                 value={timeInput}
-                onChange={(e) => setTimeInput(e.target.value)}
+                onChange={(e) => handleTimeInputChange(e.target.value)}
                 placeholder="12:45 AM"
                 className="w-full bg-zinc-800/50 border-zinc-700/50 h-11 text-sm pl-10 pr-10 focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50 transition-all"
               />
