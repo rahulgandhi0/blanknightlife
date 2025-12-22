@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import type { EventDiscovery } from '@/types/database'
 
 // GET /api/caption-stats
 // Calculate caption length statistics from approved/posted posts
@@ -8,7 +9,7 @@ export async function GET() {
     const supabase = createServiceClient()
 
     // Get all scheduled and posted events with final captions
-    const { data: events, error } = await supabase
+    const { data, error } = await supabase
       .from('event_discovery')
       .select('final_caption')
       .in('status', ['scheduled', 'posted'])
@@ -20,6 +21,8 @@ export async function GET() {
         { status: 500 }
       )
     }
+
+    const events = (data as Pick<EventDiscovery, 'final_caption'>[]) || []
 
     if (!events || events.length === 0) {
       // No data yet, return sensible defaults
@@ -34,8 +37,8 @@ export async function GET() {
 
     // Calculate lengths
     const lengths = events
-      .map(e => e.final_caption?.length || 0)
-      .filter(len => len > 0)
+      .map((e) => (e.final_caption ? e.final_caption.length : 0))
+      .filter((len) => len > 0)
 
     if (lengths.length === 0) {
       return NextResponse.json({
