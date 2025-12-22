@@ -143,7 +143,7 @@ async function processPost(
     ig_post_id: igPostId,
     is_pinned: post.isPinned || false,
     posted_at_source: post.timestamp,
-  })
+  } as never)
 
   if (error) {
     console.error('Database insert error:', JSON.stringify(error, null, 2))
