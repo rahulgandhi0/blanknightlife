@@ -86,13 +86,18 @@ async function processPost(
     return { success: false, reason: 'Duplicate - already in database' }
   }
 
-  // Determine post type and collect media URLs
+  // Determine post type and collect media URLs with broader compatibility
   let postType: PostType = 'image'
   const originalMediaUrls: string[] = []
 
-  if (post.type === 'Sidecar' && post.childPosts) {
+  // Common Apify fields
+  if (Array.isArray((post as any).imageUrls) && (post as any).imageUrls.length > 0) {
+    originalMediaUrls.push(...(post as any).imageUrls.filter(Boolean))
+    if ((post as any).imageUrls.length > 1) postType = 'carousel'
+  } else if ((post as any).imageUrl) {
+    originalMediaUrls.push((post as any).imageUrl)
+  } else if (post.type === 'Sidecar' && post.childPosts) {
     postType = 'carousel'
-    // Only get image URLs from carousel (skip videos within carousels)
     for (const child of post.childPosts) {
       if (child.type === 'Image' && child.displayUrl) {
         originalMediaUrls.push(child.displayUrl)

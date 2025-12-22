@@ -32,7 +32,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ 
           status, 
           ready: true, 
-          error: 'Failed to fetch dataset' 
+          error: 'Failed to fetch dataset',
+          datasetId
         })
       }
 
@@ -65,7 +66,9 @@ export async function POST(request: NextRequest) {
         ready: true,
         ingested: true,
         ingestResult: ingestData,
-        found: Array.isArray(posts) ? posts.length : 0
+        found: Array.isArray(posts) ? posts.length : 0,
+        datasetId,
+        sample: Array.isArray(posts) ? posts[0] : null
       })
     }
 
