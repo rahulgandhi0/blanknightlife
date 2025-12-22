@@ -34,6 +34,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     event.scheduled_for ? new Date(event.scheduled_for) : undefined
   )
+  const [dateOpen, setDateOpen] = useState(false)
   const [timeInput, setTimeInput] = useState<string>(
     event.scheduled_for
       ? format(new Date(event.scheduled_for), 'h:mm a')
@@ -46,38 +47,30 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const hasMultipleImages = mediaUrls.length > 1
 
   // Format arbitrary input into canonical `hh:mm AM/PM`
-  const formatTimeInput = (value: string) => {
-    const trimmed = value.trim()
-    const meridiemMatch = trimmed.match(/(am|pm)/i)
-    const providedMeridiem = meridiemMatch ? meridiemMatch[0].toUpperCase() : null
+  const normalizeTimeInput = (value: string) => {
+    const trimmed = value.trim().toLowerCase()
+    const letters = trimmed.replace(/[^ap]/g, '')
     const digits = trimmed.replace(/[^0-9]/g, '')
 
     if (!digits) return ''
 
     // Extract hours/minutes from digits
-    let hours: number
-    let minutes: number
-
-    if (digits.length <= 2) {
-      hours = Number(digits)
-      minutes = 0
-    } else {
-      hours = Number(digits.slice(0, digits.length - 2))
-      minutes = Number(digits.slice(-2))
-    }
+    let hours = Number(digits.slice(0, 2) || '0')
+    let minutes = Number(digits.slice(2, 4) || '0')
 
     // Clamp minutes
     minutes = Math.min(Math.max(minutes, 0), 59)
 
-    // Determine meridiem if not provided
-    let meridiem = providedMeridiem
-    if (!meridiem) {
-      meridiem = hours >= 12 ? 'PM' : 'AM'
-    }
+    // Determine meridiem
+    let meridiem: 'AM' | 'PM'
+    if (letters.startsWith('a')) meridiem = 'AM'
+    else if (letters.startsWith('p')) meridiem = 'PM'
+    else meridiem = hours >= 12 ? 'PM' : 'AM'
 
-    // Convert to 12h format
-    let displayHours = hours % 12
+    // Convert to 12h display
+    let displayHours = hours
     if (displayHours === 0) displayHours = 12
+    else if (displayHours > 12) displayHours = displayHours - 12
 
     const paddedHours = displayHours.toString().padStart(2, '0')
     const paddedMinutes = minutes.toString().padStart(2, '0')
@@ -86,8 +79,17 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   }
 
   const handleTimeInputChange = (value: string) => {
-    const formatted = formatTimeInput(value)
-    setTimeInput(formatted)
+    const normalized = normalizeTimeInput(value)
+    setTimeInput(normalized || value)
+  }
+
+  const handleTimeInputBlur = () => {
+    if (!timeInput.trim()) {
+      setTimeInput('12:00 PM')
+      return
+    }
+    const normalized = normalizeTimeInput(timeInput)
+    setTimeInput(normalized || '12:00 PM')
   }
 
   const handleApprove = async () => {
@@ -225,7 +227,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
             <label className="text-xs uppercase tracking-wider text-zinc-400 font-semibold">
               Schedule Date
             </label>
-            <Popover>
+            <Popover open={dateOpen} onOpenChange={setDateOpen}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
@@ -242,7 +244,10 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
                 <Calendar
                   mode="single"
                   selected={selectedDate}
-                  onSelect={setSelectedDate}
+                  onSelect={(date) => {
+                    setSelectedDate(date)
+                    setDateOpen(false)
+                  }}
                   initialFocus
                   disabled={(date) => date < new Date()}
                 />
@@ -261,6 +266,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
                 type="text"
                 value={timeInput}
                 onChange={(e) => handleTimeInputChange(e.target.value)}
+                onBlur={handleTimeInputBlur}
                 placeholder="12:45 AM"
                 className="w-full bg-zinc-800/50 border-zinc-700/50 h-11 text-sm pl-10 pr-10 focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50 transition-all"
               />
