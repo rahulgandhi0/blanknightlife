@@ -27,6 +27,12 @@ export default function ScrapePage() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [scrapeStatus, setScrapeStatus] = useState<string | null>(null)
   const [polling, setPolling] = useState(false)
+  const [scrapeStats, setScrapeStats] = useState<{
+    found?: number
+    processed?: number
+    skipped?: number
+    errors?: number
+  } | null>(null)
 
   const fetchHistory = async (handle: string) => {
     if (!handle) {
@@ -62,6 +68,7 @@ export default function ScrapePage() {
   const pollApifyRun = async (runId: string) => {
     setPolling(true)
     setScrapeStatus('Scraping Instagram...')
+    setScrapeStats(null)
     
     const maxAttempts = 60
     let attempts = 0
@@ -86,7 +93,14 @@ export default function ScrapePage() {
 
         if (data.ready) {
           if (data.ingested) {
-            setScrapeStatus(`✓ Complete! Ingested ${data.ingestResult?.processed || 0} posts`)
+            const result = data.ingestResult
+            setScrapeStats({
+              found: result?.details?.length || 0,
+              processed: result?.processed || 0,
+              skipped: result?.skipped || 0,
+              errors: result?.errors || 0
+            })
+            setScrapeStatus('✓ DONE')
             fetchHistory(account.trim())
             setPolling(false)
           } else if (data.status === 'FAILED') {
@@ -186,11 +200,23 @@ export default function ScrapePage() {
         )}
 
         {scrapeStatus && (
-          <div className="flex items-center gap-2 text-sm">
-            {polling && <Loader2 className="h-4 w-4 animate-spin text-violet-400" />}
-            <span className={polling ? 'text-zinc-300' : scrapeStatus.startsWith('✓') ? 'text-green-400' : 'text-zinc-400'}>
-              {scrapeStatus}
-            </span>
+          <div className="space-y-2">
+            <div className="flex items-center gap-2 text-sm">
+              {polling && <Loader2 className="h-4 w-4 animate-spin text-violet-400" />}
+              <span className={polling ? 'text-zinc-300' : scrapeStatus.startsWith('✓') ? 'text-green-400' : 'text-zinc-400'}>
+                {scrapeStatus}
+              </span>
+            </div>
+            {scrapeStats && (
+              <div className="flex gap-4 text-xs text-zinc-400">
+                <span>Found: <span className="text-white font-medium">{scrapeStats.found}</span></span>
+                <span>Ingested: <span className="text-green-400 font-medium">{scrapeStats.processed}</span></span>
+                <span>Skipped: <span className="text-zinc-500 font-medium">{scrapeStats.skipped}</span></span>
+                {scrapeStats.errors > 0 && (
+                  <span>Errors: <span className="text-red-400 font-medium">{scrapeStats.errors}</span></span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Card>
