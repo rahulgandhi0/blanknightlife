@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Image from 'next/image'
 import { format, setHours, setMinutes } from 'date-fns'
 import { Card } from '@/components/ui/card'
@@ -10,18 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import {
-  Calendar as CalendarIcon,
-  Check,
-  X,
-  ChevronLeft,
-  ChevronRight,
-  Sparkles,
-  Clock,
-  Wand2,
-  Loader2,
-  Info
-} from 'lucide-react'
+import { Calendar as CalendarIcon, Check, X, Sparkles, Clock, Wand2, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { EventDiscovery } from '@/types/database'
 
@@ -78,7 +67,6 @@ function parse12hTime(timeStr: string): { hours: number; minutes: number } {
 export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const [caption, setCaption] = useState(event.final_caption || event.ai_generated_caption || '')
   const [context, setContext] = useState('')
-  const [showOriginal, setShowOriginal] = useState(false)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     event.scheduled_for ? new Date(event.scheduled_for) : undefined
   )
@@ -102,13 +90,12 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const hasMultipleImages = mediaUrls.length > 1
   const hasAiCaption = !!event.ai_generated_caption
 
-  // Fetch caption stats on mount
-  useEffect(() => {
+  useState(() => {
     fetch('/api/caption-stats')
-      .then((res) => res.json())
-      .then((data) => setCaptionStats(data))
+      .then(res => res.json())
+      .then(data => setCaptionStats(data))
       .catch(console.error)
-  }, [])
+  })
 
   const captionLength = caption.length
   const isWithinRange = captionStats 
@@ -206,254 +193,144 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
     }
   }
 
-  const nextImage = () => setCurrentImageIndex((prev) => (prev + 1) % mediaUrls.length)
-  const prevImage = () => setCurrentImageIndex((prev) => (prev - 1 + mediaUrls.length) % mediaUrls.length)
-
   return (
-    <Card className="overflow-hidden bg-gradient-to-br from-zinc-900 to-zinc-900/60 border border-zinc-800/60 backdrop-blur-sm hover:border-zinc-700/70 transition-all h-full">
-      <div className="grid grid-cols-[200px_1fr_220px] gap-6 p-5 items-stretch min-h-[260px]">
-        {/* Left: Image - Fixed Aspect Ratio */}
-        <div className="relative w-full aspect-[4/5] rounded-xl overflow-hidden bg-black shadow-2xl ring-1 ring-white/5">
+    <Card className="border border-zinc-800 bg-zinc-950 hover:border-zinc-700 transition-colors h-full">
+      <div className="grid grid-cols-[120px_1fr_200px] gap-4 p-4 items-start">
+        <div className="relative w-full h-[160px] rounded-md overflow-hidden bg-black">
           {mediaUrls.length > 0 ? (
-            <>
-              <Image
-                src={mediaUrls[currentImageIndex]}
-                alt={`Post from @${event.source_account}`}
-                fill
-                className="object-cover"
-                unoptimized
-              />
-              
-              {hasMultipleImages && (
-                <>
-                  <button
-                    onClick={prevImage}
-                    className="absolute left-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full bg-black/80 backdrop-blur flex items-center justify-center text-white hover:bg-black transition-all"
-                  >
-                    <ChevronLeft className="h-4 w-4" />
-                  </button>
-                  <button
-                    onClick={nextImage}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 h-7 w-7 rounded-full bg-black/80 backdrop-blur flex items-center justify-center text-white hover:bg-black transition-all"
-                  >
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
-                  <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex gap-1 bg-black/60 backdrop-blur px-2 py-1 rounded-full">
-                    {mediaUrls.map((_, idx) => (
-                      <div
-                        key={idx}
-                        className={cn(
-                          'h-1.5 rounded-full transition-all',
-                          idx === currentImageIndex ? 'bg-white w-3' : 'bg-white/40 w-1.5'
-                        )}
-                      />
-                    ))}
-                  </div>
-                </>
-              )}
-              
-              {event.post_type === 'carousel' && (
-                <Badge className="absolute top-2 right-2 bg-violet-500/90 backdrop-blur text-white border-0 text-[10px] px-1.5 py-0.5">
-                  {mediaUrls.length}
-                </Badge>
-              )}
-            </>
+            <Image
+              src={mediaUrls[0]}
+              alt={`Post from @${event.source_account}`}
+              fill
+              className="object-cover"
+              unoptimized
+            />
           ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-zinc-600 text-sm">
+            <div className="absolute inset-0 flex items-center justify-center text-zinc-600 text-xs">
               No image
             </div>
           )}
         </div>
 
-        {/* Middle: Original + Context + Generated Caption */}
-        <div className="flex flex-col gap-2.5">
-          {/* Meta Info - Aligned Vertical Rail */}
-          <div className="flex flex-col gap-1">
-            <Badge variant="secondary" className="bg-zinc-800/80 text-zinc-200 border-0 text-xs font-medium px-2 py-0.5 w-fit">
-              @{event.source_account}
-            </Badge>
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-0.5 text-[11px] text-zinc-500">
+            <span>@{event.source_account}</span>
             {event.posted_at_source && (
-              <span className="text-[11px] text-zinc-500">
-                {format(new Date(event.posted_at_source), 'MMM d, yyyy')}
-              </span>
+              <span>{format(new Date(event.posted_at_source), 'MMM d, yyyy')}</span>
             )}
           </div>
 
-          {/* Original Caption (collapsible) */}
-          <div className="bg-zinc-800/40 rounded-lg p-2.5 border border-zinc-700/40">
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-medium">Original</span>
-              {event.original_caption && (
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <button className="text-[10px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1">
-                      <Info className="h-3.5 w-3.5" />
-                      Full
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="max-w-md bg-zinc-900 border-zinc-800 text-xs text-zinc-200 leading-relaxed">
-                    {event.original_caption}
-                  </PopoverContent>
-                </Popover>
-              )}
-            </div>
-            <p className={cn("text-xs text-zinc-400 mt-1.5 leading-relaxed", showOriginal ? '' : 'line-clamp-2')}>
-              {event.original_caption || 'No caption'}
-            </p>
-            {event.original_caption && (
-              <button
-                onClick={() => setShowOriginal((prev) => !prev)}
-                className="text-[10px] text-violet-300 hover:text-violet-200 mt-1"
-              >
-                {showOriginal ? 'Show less' : 'Show more'}
-              </button>
-            )}
+          <div className="text-[12px] text-zinc-500 leading-relaxed">
+            {event.original_caption || 'No caption'}
           </div>
 
-          {/* Context Tags + Input + Generate */}
           <div className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {['link in bio', 'last chance', 'flash sale', 'event launch'].map((tag) => (
-                <button
-                  key={tag}
-                  onClick={() => setContext(prev => prev ? `${prev}, ${tag}` : tag)}
-                  className={cn(
-                    "px-2 py-0.5 rounded-md text-[10px] font-medium transition-all",
-                    context.includes(tag) 
-                      ? "bg-violet-500/30 text-violet-300 border border-violet-500/50 shadow-sm" 
-                      : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-300 border border-zinc-700/50"
-                  )}
-                >
-                  {tag}
-                </button>
-              ))}
-            </div>
-            <div className="flex gap-2 items-center">
-              <Input
-                value={context}
-                onChange={(e) => setContext(e.target.value)}
-                placeholder="custom context..."
-                className="h-8 text-xs bg-transparent border-[1.25px] border-zinc-700/60 flex-1 focus:border-violet-500/50 focus:bg-zinc-900/60"
-              />
-              <Button
-                onClick={handleGenerateCaption}
-                disabled={isGenerating}
-                size="sm"
-                className="h-8 px-3 bg-violet-600 hover:bg-violet-500"
-              >
-                {isGenerating ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Wand2 className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            </div>
-          </div>
-
-          {/* AI Generated / Editable Caption */}
-          <div className="relative flex-1">
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <Sparkles className="h-3 w-3 text-violet-400" />
-              <span className="text-[9px] text-zinc-400 font-medium uppercase tracking-wider">
-                {hasAiCaption ? 'AI Caption' : 'Caption'} (editable)
-              </span>
+            <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+              <Sparkles className="h-3 w-3" />
+              <span>AI caption</span>
             </div>
             <Textarea
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
-              placeholder={hasAiCaption ? 'Edit caption or regenerate...' : 'Click ✨ to generate, or write manually...'}
-              className="h-full min-h-[75px] bg-zinc-800/60 border-[1.5px] border-zinc-700/60 text-white resize-none text-sm leading-relaxed p-3 pb-7 rounded-lg focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50 focus:bg-zinc-800/80"
+              placeholder="Refine the caption..."
+              className="h-[120px] bg-zinc-900 border border-zinc-800 text-sm text-white leading-relaxed p-3 rounded-md focus:border-violet-500/60 focus:ring-0"
             />
-            <div className="absolute right-2.5 bottom-2 flex items-center gap-2">
+            <div className="flex items-center justify-between text-[11px] text-zinc-500">
               {captionStats && (
-                <span className="text-[9px] text-zinc-600">
+                <span>
                   {captionStats.minRecommended}-{captionStats.maxRecommended}
                 </span>
               )}
-              <span className={cn("text-[10px] font-medium bg-zinc-900/90 px-2 py-0.5 rounded", lengthColor)}>
+              <span className={cn("px-2 py-0.5 rounded bg-zinc-900", lengthColor)}>
                 {caption.length}
               </span>
             </div>
           </div>
+
+          <div className="flex items-center gap-2">
+            <Input
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
+              placeholder="Optional context"
+              className="h-8 text-xs bg-zinc-900 border border-zinc-800 flex-1 focus:border-violet-500/60 focus:ring-0"
+            />
+            <Button
+              onClick={handleGenerateCaption}
+              disabled={isGenerating}
+              size="sm"
+              className="h-8 px-3 bg-violet-600 hover:bg-violet-500"
+            >
+              {isGenerating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Wand2 className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
         </div>
 
-        {/* Right: Schedule & Actions */}
-        <div className="flex flex-col gap-3">
-          {/* Date */}
-          <div className="flex flex-col">
-            <label className="sr-only">Date</label>
-            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    'w-full justify-start text-left font-normal bg-zinc-800/60 border-[1.5px] border-zinc-700/60 h-10 text-sm focus:border-violet-500/50 focus:bg-zinc-800/80',
-                    !selectedDate && 'text-zinc-500'
-                  )}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4 text-zinc-400" />
-                  {selectedDate ? format(selectedDate, 'MMM d, yyyy') : 'Select date'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0 bg-zinc-900 border-zinc-800" align="end">
-                <Calendar
-                  mode="single"
-                  selected={selectedDate}
-                  onSelect={(date) => {
-                    setSelectedDate(date)
-                    setCalendarOpen(false)
-                  }}
-                  initialFocus
-                  disabled={(date) => date < new Date()}
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
-
-          {/* Time */}
-          <div className="flex flex-col">
-            <label className="sr-only">Time</label>
-            <div className="relative">
-              <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-              <Input
-                type="text"
-                value={timeRaw || timeDisplay}
-                onChange={(e) => handleTimeChange(e.target.value)}
-                onBlur={handleTimeBlur}
-                onKeyDown={handleTimeKeyDown}
-                onFocus={() => setTimeRaw('')}
-                placeholder="1430"
-                className="w-full bg-zinc-800/60 border-[1.5px] border-zinc-700/60 h-10 text-sm pl-10 focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50 focus:bg-zinc-800/80"
+        <div className="flex flex-col gap-2 items-stretch">
+          <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                className={cn(
+                  'w-full justify-start text-left h-9 text-sm bg-zinc-900 border border-zinc-800',
+                  !selectedDate && 'text-zinc-500'
+                )}
+              >
+                <CalendarIcon className="mr-2 h-4 w-4 text-zinc-400" />
+                {selectedDate ? format(selectedDate, 'MMM d, yyyy') : 'Date'}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0 bg-zinc-950 border border-zinc-800" align="end">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={(date) => {
+                  setSelectedDate(date)
+                  setCalendarOpen(false)
+                }}
+                initialFocus
+                disabled={(date) => date < new Date()}
               />
-            </div>
-            <p className="text-[9px] text-zinc-600 mt-1">Type 24h (1430 → 2:30 PM)</p>
+            </PopoverContent>
+          </Popover>
+
+          <div className="relative">
+            <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
+            <Input
+              type="text"
+              value={timeRaw || timeDisplay}
+              onChange={(e) => handleTimeChange(e.target.value)}
+              onBlur={handleTimeBlur}
+              onKeyDown={handleTimeKeyDown}
+              onFocus={() => setTimeRaw('')}
+              placeholder="1430"
+              className="w-full bg-zinc-900 border border-zinc-800 h-9 text-sm pl-10 focus:border-violet-500/60 focus:ring-0"
+            />
           </div>
 
-          <div className="flex-1" />
-
-          {/* Actions - Uniform Width */}
-          <div className="flex flex-col gap-2.5">
-            <Button
-              onClick={handleApprove}
-              disabled={isLoading || !selectedDate || !caption.trim()}
-              size="sm"
-              className="w-full bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 h-10 text-sm font-semibold shadow-lg shadow-violet-500/20"
-            >
-              <Check className="h-4 w-4 mr-2" />
-              Approve & Schedule
-            </Button>
-            
-            <Button
-              onClick={handleDiscard}
-              disabled={isLoading}
-              size="sm"
-              variant="outline"
-              className="w-full bg-zinc-800/30 border-[1.5px] border-zinc-700/50 hover:bg-red-500/10 hover:border-red-500/50 hover:text-red-400 h-9 text-sm"
-            >
-              <X className="h-4 w-4 mr-2" />
-              Discard
-            </Button>
-          </div>
+          <Button
+            onClick={handleApprove}
+            disabled={isLoading || !selectedDate || !caption.trim()}
+            size="sm"
+            className="w-full h-9 text-sm font-semibold bg-violet-600 hover:bg-violet-500"
+          >
+            <Check className="h-4 w-4 mr-2" />
+            Approve & Schedule
+          </Button>
+          
+          <Button
+            onClick={handleDiscard}
+            disabled={isLoading}
+            size="sm"
+            variant="outline"
+            className="w-full h-9 text-sm border border-zinc-800 text-red-400 hover:border-red-500 hover:text-red-300"
+          >
+            <X className="h-4 w-4 mr-2" />
+            Discard
+          </Button>
         </div>
       </div>
     </Card>
