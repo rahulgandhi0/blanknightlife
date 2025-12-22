@@ -38,7 +38,11 @@ export async function POST(request: NextRequest) {
 
       const posts = await datasetResp.json()
 
-      const ingestResp = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/ingest`, {
+      const baseUrl = process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL}` 
+        : 'http://localhost:3000'
+      
+      const ingestResp = await fetch(`${baseUrl}/api/ingest`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(posts)
