@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { format, setHours, setMinutes } from 'date-fns'
 import { Card } from '@/components/ui/card'
@@ -19,7 +19,8 @@ import {
   Sparkles,
   Clock,
   Wand2,
-  Loader2
+  Loader2,
+  Info
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { EventDiscovery } from '@/types/database'
@@ -77,6 +78,7 @@ function parse12hTime(timeStr: string): { hours: number; minutes: number } {
 export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const [caption, setCaption] = useState(event.final_caption || event.ai_generated_caption || '')
   const [context, setContext] = useState('')
+  const [showOriginal, setShowOriginal] = useState(false)
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     event.scheduled_for ? new Date(event.scheduled_for) : undefined
   )
@@ -101,12 +103,12 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const hasAiCaption = !!event.ai_generated_caption
 
   // Fetch caption stats on mount
-  useState(() => {
+  useEffect(() => {
     fetch('/api/caption-stats')
-      .then(res => res.json())
-      .then(data => setCaptionStats(data))
+      .then((res) => res.json())
+      .then((data) => setCaptionStats(data))
       .catch(console.error)
-  })
+  }, [])
 
   const captionLength = caption.length
   const isWithinRange = captionStats 
@@ -277,23 +279,46 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
             )}
           </div>
 
-          {/* Original Caption (read-only) */}
+          {/* Original Caption (collapsible) */}
           <div className="bg-zinc-800/40 rounded-lg p-2.5 border border-zinc-700/40">
-            <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-medium">Original</span>
-            <p className="text-xs text-zinc-400 mt-1.5 line-clamp-3 leading-relaxed">
+            <div className="flex items-center justify-between">
+              <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-medium">Original</span>
+              {event.original_caption && (
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <button className="text-[10px] text-zinc-400 hover:text-zinc-200 flex items-center gap-1">
+                      <Info className="h-3.5 w-3.5" />
+                      Full
+                    </button>
+                  </PopoverTrigger>
+                  <PopoverContent className="max-w-md bg-zinc-900 border-zinc-800 text-xs text-zinc-200 leading-relaxed">
+                    {event.original_caption}
+                  </PopoverContent>
+                </Popover>
+              )}
+            </div>
+            <p className={cn("text-xs text-zinc-400 mt-1.5 leading-relaxed", showOriginal ? '' : 'line-clamp-2')}>
               {event.original_caption || 'No caption'}
             </p>
+            {event.original_caption && (
+              <button
+                onClick={() => setShowOriginal((prev) => !prev)}
+                className="text-[10px] text-violet-300 hover:text-violet-200 mt-1"
+              >
+                {showOriginal ? 'Show less' : 'Show more'}
+              </button>
+            )}
           </div>
 
           {/* Context Tags + Input + Generate */}
-          <div className="flex flex-col gap-2">
-            <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5 flex-wrap">
               {['link in bio', 'last chance', 'flash sale', 'event launch'].map((tag) => (
                 <button
                   key={tag}
                   onClick={() => setContext(prev => prev ? `${prev}, ${tag}` : tag)}
                   className={cn(
-                    "px-2.5 py-1 rounded-md text-[10px] font-medium transition-all",
+                    "px-2 py-0.5 rounded-md text-[10px] font-medium transition-all",
                     context.includes(tag) 
                       ? "bg-violet-500/30 text-violet-300 border border-violet-500/50 shadow-sm" 
                       : "bg-white/5 text-zinc-400 hover:bg-white/10 hover:text-zinc-300 border border-zinc-700/50"
@@ -308,7 +333,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
                 value={context}
                 onChange={(e) => setContext(e.target.value)}
                 placeholder="custom context..."
-                className="h-8 text-xs bg-zinc-800/60 border-[1.5px] border-zinc-700/60 flex-1 focus:border-violet-500/50 focus:bg-zinc-800/80"
+                className="h-8 text-xs bg-transparent border-[1.25px] border-zinc-700/60 flex-1 focus:border-violet-500/50 focus:bg-zinc-900/60"
               />
               <Button
                 onClick={handleGenerateCaption}
@@ -356,7 +381,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
         <div className="flex flex-col gap-3">
           {/* Date */}
           <div className="flex flex-col">
-            <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-1.5">Date</label>
+            <label className="sr-only">Date</label>
             <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
               <PopoverTrigger asChild>
                 <Button
@@ -387,7 +412,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
 
           {/* Time */}
           <div className="flex flex-col">
-            <label className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-1.5">Time</label>
+            <label className="sr-only">Time</label>
             <div className="relative">
               <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
               <Input
