@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import type { EventDiscovery } from '@/types/database'
 
 export async function GET(request: NextRequest) {
   try {
@@ -23,7 +24,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const events = data || []
+    const events = (data as Pick<EventDiscovery, 'created_at' | 'posted_at_source' | 'status'>[]) || []
     const lastIngestedAt = events[0]?.created_at || null
 
     const statusCounts: Record<string, number> = {}
