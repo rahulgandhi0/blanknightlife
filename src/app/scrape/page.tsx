@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
+import { RefreshCw } from 'lucide-react'
 
 interface HistoryItem {
   created_at: string
@@ -16,7 +17,7 @@ export default function ScrapePage() {
   const [account, setAccount] = useState('')
   const [sinceHours, setSinceHours] = useState('48')
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<{ runId?: string; error?: string } | null>(null)
+  const [result, setResult] = useState<{ runId?: string; error?: string; success?: boolean } | null>(null)
   const [history, setHistory] = useState<{
     lastIngestedAt: string | null
     statusCounts: Record<string, number>
@@ -24,6 +25,7 @@ export default function ScrapePage() {
     total: number
   } | null>(null)
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [polling, setPolling] = useState(false)
 
   const fetchHistory = async (handle: string) => {
     if (!handle) {
@@ -56,10 +58,19 @@ export default function ScrapePage() {
     return () => clearTimeout(t)
   }, [account])
 
+  useEffect(() => {
+    if (!polling || !account.trim()) return
+    const interval = setInterval(() => {
+      fetchHistory(account.trim())
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [polling, account])
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setResult(null)
+    setPolling(false)
     try {
       const res = await fetch('/api/apify-trigger', {
         method: 'POST',
@@ -68,6 +79,10 @@ export default function ScrapePage() {
       })
       const data = await res.json()
       setResult(data)
+      if (data.success) {
+        setPolling(true)
+        setTimeout(() => setPolling(false), 120000)
+      }
       fetchHistory(account.trim())
     } catch (error) {
       setResult({ error: 'Request failed' })
@@ -115,9 +130,20 @@ export default function ScrapePage() {
         </form>
 
         {result && (
-          <div className="text-sm text-zinc-300 space-y-1">
+          <div className="text-sm space-y-1">
             {result.error && <p className="text-red-400">{result.error}</p>}
-            {result.runId && <p>Apify run started: {result.runId}</p>}
+            {result.success && result.runId && (
+              <div className="space-y-1">
+                <p className="text-green-400">✓ Scrape started successfully</p>
+                <p className="text-zinc-400 text-xs">Run ID: {result.runId}</p>
+                {polling && (
+                  <p className="text-zinc-500 text-xs flex items-center gap-1">
+                    <RefreshCw className="h-3 w-3 animate-spin" />
+                    Auto-refreshing history every 5s...
+                  </p>
+                )}
+              </div>
+            )}
           </div>
         )}
       </Card>
@@ -128,7 +154,18 @@ export default function ScrapePage() {
             <p className="text-sm text-zinc-500">Scrape history for this handle</p>
             <p className="text-lg text-white">{account || '–'}</p>
           </div>
-          {historyLoading && <p className="text-xs text-zinc-500">Loading…</p>}
+          <div className="flex items-center gap-2">
+            {historyLoading && <p className="text-xs text-zinc-500">Loading…</p>}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fetchHistory(account.trim())}
+              disabled={!account.trim() || historyLoading}
+              className="bg-zinc-900 border-zinc-800 h-7 px-2"
+            >
+              <RefreshCw className={`h-3 w-3 ${historyLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          </div>
         </div>
         {history ? (
           <div className="space-y-2 text-sm text-zinc-300">
@@ -136,15 +173,15 @@ export default function ScrapePage() {
             <p>Total ingested: {history.total}</p>
             <div className="flex gap-3 text-xs text-zinc-400">
               {Object.entries(history.statusCounts).map(([k, v]) => (
-                <span key={k}>{k}: {v}</span>
+                <span key={k} className="capitalize">{k}: {v}</span>
               ))}
             </div>
-            <div className="border border-zinc-800 rounded p-2 space-y-1 text-xs text-zinc-400">
+            <div className="border border-zinc-800 rounded p-2 space-y-1 text-xs text-zinc-400 max-h-48 overflow-y-auto">
               {history.recent.length === 0 && <p>No recent ingests</p>}
               {history.recent.map((item, idx) => (
                 <div key={idx} className="flex items-center justify-between">
                   <span>{new Date(item.created_at).toLocaleString()}</span>
-                  <span className="uppercase text-[11px]">{item.status}</span>
+                  <span className="uppercase text-[11px] text-zinc-500">{item.status}</span>
                 </div>
               ))}
             </div>
