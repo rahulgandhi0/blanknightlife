@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import type { EventStatus } from '@/types/database'
+import type { EventStatus, EventDiscovery } from '@/types/database'
 
 // GET /api/events?status=pending
 export async function GET(request: NextRequest) {
@@ -34,7 +34,10 @@ export async function GET(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json()
-    const { id, updates } = body
+    const { id, updates } = body as { 
+      id: string
+      updates: Partial<Omit<EventDiscovery, 'id' | 'created_at'>>
+    }
 
     if (!id || !updates) {
       return NextResponse.json(
@@ -47,7 +50,7 @@ export async function PATCH(request: NextRequest) {
 
     const { data, error } = await supabase
       .from('event_discovery')
-      .update(updates)
+      .update(updates as never)
       .eq('id', id)
       .select()
       .single()
