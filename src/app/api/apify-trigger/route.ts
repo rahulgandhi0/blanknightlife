@@ -16,8 +16,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'APIFY_API_TOKEN or APIFY_ACTOR_ID missing' }, { status: 500 })
     }
 
+    const cleanHandle = account.trim().replace(/^@/, '')
+
     const input = {
-      handle: account,
+      handle: cleanHandle,
       sinceHours,
     }
 
