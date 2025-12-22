@@ -212,7 +212,7 @@ export default function ScrapePage() {
                 <span>Found: <span className="text-white font-medium">{scrapeStats.found}</span></span>
                 <span>Ingested: <span className="text-green-400 font-medium">{scrapeStats.processed}</span></span>
                 <span>Skipped: <span className="text-zinc-500 font-medium">{scrapeStats.skipped}</span></span>
-                {scrapeStats.errors > 0 && (
+                {(scrapeStats.errors ?? 0) > 0 && (
                   <span>Errors: <span className="text-red-400 font-medium">{scrapeStats.errors}</span></span>
                 )}
               </div>
