@@ -153,33 +153,48 @@ async function processPost(
   return { success: true }
 }
 
+// Fetch posts from Apify dataset
+async function fetchApifyDataset(datasetId: string): Promise<ApifyInstagramPost[]> {
+  const url = `https://api.apify.com/v2/datasets/${datasetId}/items?format=json`
+  const response = await fetch(url)
+  if (!response.ok) {
+    throw new Error(`Failed to fetch Apify dataset: ${response.status}`)
+  }
+  return response.json()
+}
+
 // POST /api/ingest
-// Receives posts directly (array of ApifyInstagramPost)
+// Receives posts directly OR Apify webhook payload
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const supabase = createServiceClient()
 
-    // Handle both direct array and wrapped payload
+    // Handle multiple payload formats
     let posts: ApifyInstagramPost[] = []
     
     if (Array.isArray(body)) {
+      // Direct array of posts
       posts = body
     } else if (body.posts && Array.isArray(body.posts)) {
+      // Wrapped in { posts: [...] }
       posts = body.posts
     } else if (body.resource?.defaultDatasetId) {
-      // This is an Apify webhook - would need to fetch from dataset
-      // For simplicity, we expect direct post data instead
-      return NextResponse.json(
-        { error: 'Apify webhook format not supported. Send posts array directly.' },
-        { status: 400 }
-      )
+      // Apify webhook format - fetch from dataset API
+      console.log('Apify webhook received, fetching dataset:', body.resource.defaultDatasetId)
+      posts = await fetchApifyDataset(body.resource.defaultDatasetId)
+    } else if (body.defaultDatasetId) {
+      // Alternative Apify format
+      console.log('Apify dataset ID received:', body.defaultDatasetId)
+      posts = await fetchApifyDataset(body.defaultDatasetId)
     } else {
       return NextResponse.json(
-        { error: 'Invalid payload. Expected array of posts.' },
+        { error: 'Invalid payload. Expected array of posts or Apify webhook.' },
         { status: 400 }
       )
     }
+    
+    console.log(`Processing ${posts.length} posts from ingest`)
 
     const results = {
       processed: 0,
