@@ -70,7 +70,7 @@ export default function ScrapePage() {
     setScrapeStatus('Scraping Instagram...')
     setScrapeStats(null)
     
-    const maxAttempts = 60
+    const maxAttempts = 30
     let attempts = 0
 
     const poll = async (): Promise<void> => {
@@ -118,7 +118,7 @@ export default function ScrapePage() {
           }
         } else {
           setScrapeStatus(`Scraping... (${data.status || 'RUNNING'})`)
-          setTimeout(poll, 5000)
+          setTimeout(poll, 8000)
         }
       } catch (error) {
         setScrapeStatus('Polling error')

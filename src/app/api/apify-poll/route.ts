@@ -64,7 +64,8 @@ export async function POST(request: NextRequest) {
         status,
         ready: true,
         ingested: true,
-        ingestResult: ingestData
+        ingestResult: ingestData,
+        found: Array.isArray(posts) ? posts.length : 0
       })
     }
 
