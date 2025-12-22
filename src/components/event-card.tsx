@@ -195,7 +195,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
 
   return (
     <Card className="border border-zinc-800 bg-zinc-950 hover:border-zinc-700 transition-colors h-full">
-      <div className="grid grid-cols-[120px_1fr_200px] gap-4 p-4 items-start">
+      <div className="grid grid-cols-[120px_1fr_200px] gap-3 p-3 items-stretch">
         <div className="relative w-full h-[160px] rounded-md overflow-hidden bg-black">
           {mediaUrls.length > 0 ? (
             <Image
@@ -212,7 +212,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
           )}
         </div>
 
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-2 h-full">
           <div className="flex flex-col gap-0.5 text-[11px] text-zinc-500">
             <span>@{event.source_account}</span>
             {event.posted_at_source && (
@@ -233,7 +233,7 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
               placeholder="Refine the caption..."
-              className="h-[120px] bg-zinc-900 border border-zinc-800 text-sm text-white leading-relaxed p-3 rounded-md focus:border-violet-500/60 focus:ring-0"
+              className="h-[110px] bg-zinc-900 border border-zinc-800 text-sm text-white leading-relaxed p-3 rounded-md focus:border-violet-500/60 focus:ring-0"
             />
             <div className="flex items-center justify-between text-[11px] text-zinc-500">
               {captionStats && (
