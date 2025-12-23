@@ -60,24 +60,21 @@ async function processPost(
   post: ApifyInstagramPost
 ): Promise<{ success: boolean; reason?: string }> {
   const igPostId = post.id || post.shortCode
+  const postData = post as any
 
   // Skip pinned posts entirely (avoid media downloads/credits waste)
-  if ((post as any).isPinned || (post as any).pinned) {
+  if (postData.isPinned || postData.pinned) {
     return { success: false, reason: 'Skipped pinned post' }
   }
 
-  // Skip videos/reels - we only want images and carousels
-  if (post.type === 'Video') {
-    return { success: false, reason: 'Skipped video/reel' }
+  // Skip Reels - check productType for "clips" which indicates Reels
+  if (postData.productType === 'clips') {
+    return { success: false, reason: 'Skipped reel' }
   }
 
-  // Check for pinned post trap (old pinned posts)
-  if (post.isPinned) {
-    const postDate = new Date(post.timestamp)
-    const hoursSincePost = (Date.now() - postDate.getTime()) / (1000 * 60 * 60)
-    if (hoursSincePost > 48) {
-      return { success: false, reason: 'Skipped old pinned post' }
-    }
+  // Skip videos - we only want images and carousels (Sidecars)
+  if (post.type === 'Video') {
+    return { success: false, reason: 'Skipped video' }
   }
 
   // Check if already exists in database
@@ -95,25 +92,41 @@ async function processPost(
   let postType: PostType = 'image'
   const originalMediaUrls: string[] = []
 
-  // Common Apify fields
-  if (Array.isArray((post as any).imageUrls) && (post as any).imageUrls.length > 0) {
-    originalMediaUrls.push(...(post as any).imageUrls.filter(Boolean))
-    if ((post as any).imageUrls.length > 1) postType = 'carousel'
-  } else if ((post as any).imageUrl) {
-    originalMediaUrls.push((post as any).imageUrl)
-  } else if (post.type === 'Sidecar' && post.childPosts) {
+  // Priority 1: Check 'images' array (apify/instagram-post-scraper format for Sidecars)
+  if (Array.isArray(postData.images) && postData.images.length > 0) {
+    originalMediaUrls.push(...postData.images.filter(Boolean))
+    if (postData.images.length > 1) postType = 'carousel'
+  }
+  // Priority 2: Check 'imageUrls' array (alternative format)
+  else if (Array.isArray(postData.imageUrls) && postData.imageUrls.length > 0) {
+    originalMediaUrls.push(...postData.imageUrls.filter(Boolean))
+    if (postData.imageUrls.length > 1) postType = 'carousel'
+  }
+  // Priority 3: Check 'imageUrl' single field
+  else if (postData.imageUrl) {
+    originalMediaUrls.push(postData.imageUrl)
+  }
+  // Priority 4: Extract from childPosts for Sidecars
+  else if (post.type === 'Sidecar' && post.childPosts) {
     postType = 'carousel'
     for (const child of post.childPosts) {
       if (child.type === 'Image' && child.displayUrl) {
         originalMediaUrls.push(child.displayUrl)
       }
     }
-  } else if (post.displayUrl) {
+  }
+  // Priority 5: Fallback to displayUrl
+  else if (post.displayUrl) {
     originalMediaUrls.push(post.displayUrl)
   }
 
   if (originalMediaUrls.length === 0) {
     return { success: false, reason: 'No valid media URLs found' }
+  }
+
+  // Set postType based on Apify type field
+  if (post.type === 'Sidecar' || originalMediaUrls.length > 1) {
+    postType = 'carousel'
   }
 
   // Upload all media to Supabase Storage (prevent Instagram URL expiry)
