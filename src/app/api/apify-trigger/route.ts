@@ -10,7 +10,8 @@ export async function POST(request: NextRequest) {
     }
 
     const token = process.env.APIFY_API_TOKEN
-    const actorId = process.env.APIFY_ACTOR_ID || 'apify~instagram-scraper'
+    const envActor = process.env.APIFY_ACTOR_ID
+    const actorId = envActor ? envActor.replace('/', '~') : 'apify~instagram-scraper'
 
     if (!token) {
       return NextResponse.json({ error: 'APIFY_API_TOKEN missing' }, { status: 500 })
@@ -29,10 +30,10 @@ export async function POST(request: NextRequest) {
       proxy: { useApifyProxy: true },
     }
 
-    const runResp = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${token}`, {
+    const runResp = await fetch(`https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ input }),
+      body: JSON.stringify(input),
     })
 
     if (!runResp.ok) {
@@ -40,17 +41,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Apify run failed', details: err }, { status: 500 })
     }
 
-    const data = await runResp.json()
-    const runId = data?.data?.id
+    const posts = await runResp.json()
 
-    if (!runId) {
-      return NextResponse.json({ error: 'Apify run did not return runId' }, { status: 500 })
+    if (!Array.isArray(posts) || posts.length === 0) {
+      return NextResponse.json({
+        success: true,
+        found: 0,
+        ingested: 0,
+        message: 'No items returned (private account or no posts in range)',
+      })
     }
+
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000'
+
+    const ingestResp = await fetch(`${baseUrl}/api/ingest`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(posts),
+    })
+
+    const ingestData = await ingestResp.json()
 
     return NextResponse.json({
       success: true,
-      runId,
-      message: 'Scrape started',
+      found: posts.length,
+      ingestResult: ingestData,
+      sample: posts[0] || null,
     })
   } catch (error) {
     return NextResponse.json({ error: 'Internal error', details: String(error) }, { status: 500 })
