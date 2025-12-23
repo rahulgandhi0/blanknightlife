@@ -31,7 +31,16 @@ export default function ScrapePage() {
     processed?: number
     skipped?: number
     errors?: number
+    details?: { id: string; result: string }[]
   } | null>(null)
+  const [progress, setProgress] = useState<
+    { label: string; state: 'idle' | 'active' | 'done' | 'error'; helper?: string }[]
+  >([
+    { label: 'Start', state: 'idle' },
+    { label: 'Scrape', state: 'idle' },
+    { label: 'Ingest', state: 'idle' },
+    { label: 'Done', state: 'idle' },
+  ])
 
   const fetchHistory = async (handle: string) => {
     if (!handle) {
@@ -69,6 +78,12 @@ export default function ScrapePage() {
     setLoading(true)
     setResult(null)
     setScrapeStatus(null)
+    setProgress([
+      { label: 'Start', state: 'active' },
+      { label: 'Scrape', state: 'idle' },
+      { label: 'Ingest', state: 'idle' },
+      { label: 'Done', state: 'idle' },
+    ])
     try {
       const res = await fetch('/api/apify-trigger', {
         method: 'POST',
@@ -78,18 +93,37 @@ export default function ScrapePage() {
       const data = await res.json()
       setResult(data)
       if (data.success) {
+        setProgress([
+          { label: 'Start', state: 'done' },
+          { label: 'Scrape', state: 'done', helper: `Found ${data.found || 0}` },
+          { label: 'Ingest', state: 'done', helper: `Processed ${data.ingestResult?.processed || 0}` },
+          { label: 'Done', state: 'done' },
+        ])
         setScrapeStats({
           found: data.found || 0,
           processed: data.ingestResult?.processed || 0,
           skipped: data.ingestResult?.skipped || 0,
           errors: data.ingestResult?.errors || 0,
+          details: data.ingestResult?.details || [],
         })
         setScrapeStatus(data.message || '✓ DONE')
         fetchHistory(account.trim())
       } else if (data.error) {
+        setProgress([
+          { label: 'Start', state: 'done' },
+          { label: 'Scrape', state: 'error', helper: data.error },
+          { label: 'Ingest', state: 'idle' },
+          { label: 'Done', state: 'idle' },
+        ])
         setScrapeStatus(data.error)
       }
     } catch (error) {
+      setProgress([
+        { label: 'Start', state: 'done' },
+        { label: 'Scrape', state: 'error', helper: 'Request failed' },
+        { label: 'Ingest', state: 'idle' },
+        { label: 'Done', state: 'idle' },
+      ])
       setResult({ error: 'Request failed' })
     } finally {
       setLoading(false)
@@ -152,6 +186,20 @@ export default function ScrapePage() {
                 {scrapeStatus}
               </span>
             </div>
+            <div className="flex gap-4 text-xs text-zinc-400">
+              {progress.map((step, idx) => (
+                <div key={idx} className="flex flex-col gap-0.5">
+                  <span className={
+                    step.state === 'done' ? 'text-green-400' :
+                    step.state === 'active' ? 'text-white' :
+                    step.state === 'error' ? 'text-red-400' : 'text-zinc-500'
+                  }>
+                    {step.label}
+                  </span>
+                  {step.helper && <span className="text-[11px] text-zinc-500">{step.helper}</span>}
+                </div>
+              ))}
+            </div>
             {scrapeStats && (
               <div className="flex gap-4 text-xs text-zinc-400">
                 <span>Found: <span className="text-white font-medium">{scrapeStats.found}</span></span>
@@ -160,6 +208,16 @@ export default function ScrapePage() {
                 {(scrapeStats.errors ?? 0) > 0 && (
                   <span>Errors: <span className="text-red-400 font-medium">{scrapeStats.errors}</span></span>
                 )}
+              </div>
+            )}
+            {scrapeStats?.details && scrapeStats.details.length > 0 && (
+              <div className="border border-zinc-800 rounded p-2 text-[11px] text-zinc-400 max-h-40 overflow-y-auto">
+                {scrapeStats.details.map((d, i) => (
+                  <div key={i} className="flex items-center justify-between">
+                    <span className="text-zinc-500">{d.id}</span>
+                    <span className="text-zinc-300">{d.result}</span>
+                  </div>
+                ))}
               </div>
             )}
           </div>
