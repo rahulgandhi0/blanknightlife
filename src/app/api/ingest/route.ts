@@ -61,6 +61,11 @@ async function processPost(
 ): Promise<{ success: boolean; reason?: string }> {
   const igPostId = post.id || post.shortCode
 
+  // Skip pinned posts entirely (avoid media downloads/credits waste)
+  if ((post as any).isPinned || (post as any).pinned) {
+    return { success: false, reason: 'Skipped pinned post' }
+  }
+
   // Skip videos/reels - we only want images and carousels
   if (post.type === 'Video') {
     return { success: false, reason: 'Skipped video/reel' }
