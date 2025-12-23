@@ -190,8 +190,8 @@ export default function ScrapePage() {
               required
             />
           </div>
-          <Button type="submit" disabled={loading} className="bg-violet-600 hover:bg-violet-500">
-            {loading ? 'Triggering...' : 'Trigger Scrape'}
+          <Button type="submit" disabled={loading} className="bg-violet-600 hover:bg-violet-500" aria-busy={loading}>
+            {loading ? 'Processing…' : 'Trigger Scrape'}
           </Button>
         </form>
 

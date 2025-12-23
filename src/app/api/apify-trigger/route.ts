@@ -130,12 +130,19 @@ export async function POST(request: NextRequest) {
     const hours = Number(sinceHours) || 48
     const cutoffMs = Date.now() - hours * 60 * 60 * 1000
 
+    // Prefer the current origin to avoid Vercel protection redirects; fall back to env
+    const origin = (() => {
+      try {
+        return new URL(request.url).origin
+      } catch {
+        return null
+      }
+    })()
     const localPort = process.env.PORT || process.env.NEXT_PUBLIC_PORT || '3000'
-    const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
-      ? process.env.NEXT_PUBLIC_BASE_URL
-      : process.env.VERCEL_URL
-        ? `https://${process.env.VERCEL_URL}`
-        : `http://localhost:${localPort}`
+    const baseUrl =
+      origin ||
+      process.env.NEXT_PUBLIC_BASE_URL ||
+      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${localPort}`)
 
     const callActor = async (actorId: string, useApiScraperShape: boolean) => {
       const profileUrl = `https://www.instagram.com/${cleanHandle}`
@@ -144,10 +151,14 @@ export async function POST(request: NextRequest) {
             directUrls: [profileUrl],
             resultsLimit: 25,
             onlyPostsNewerThan: `${hours} hours`,
+            resultsType: 'posts', // restrict to feed posts
             addStories: false,
             addTaggedPosts: false,
             includeStories: false,
             includeTagged: false,
+            includeHighlights: false,
+            includeComments: false,
+            includeReplies: false,
             downloadMedia: false,
             proxy: { useApifyProxy: true },
           }
