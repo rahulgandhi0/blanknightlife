@@ -32,6 +32,7 @@ export default function ScrapePage() {
     skipped?: number
     errors?: number
     details?: { id: string; result: string }[]
+    fallbackUsed?: boolean
   } | null>(null)
   const [progress, setProgress] = useState<
     { label: string; state: 'idle' | 'active' | 'done' | 'error'; helper?: string }[]
@@ -95,7 +96,7 @@ export default function ScrapePage() {
       if (data.success) {
         setProgress([
           { label: 'Start', state: 'done' },
-          { label: 'Scrape', state: 'done', helper: `Found ${data.found || 0}` },
+          { label: 'Scrape', state: 'done', helper: `Found ${data.found || 0}${data.fallbackUsed ? ' (fallback)' : ''}` },
           { label: 'Ingest', state: 'done', helper: `Processed ${data.ingestResult?.processed || 0}` },
           { label: 'Done', state: 'done' },
         ])
@@ -105,6 +106,7 @@ export default function ScrapePage() {
           skipped: data.ingestResult?.skipped || 0,
           errors: data.ingestResult?.errors || 0,
           details: data.ingestResult?.details || [],
+          fallbackUsed: data.fallbackUsed || false,
         })
         setScrapeStatus(data.message || '✓ DONE')
         fetchHistory(account.trim())

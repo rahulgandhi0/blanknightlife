@@ -22,28 +22,44 @@ export async function POST(request: NextRequest) {
     const hours = Number(sinceHours) || 48
     const onlyPostsNewerThan = `${hours} hours`
 
-    const input = {
-      directUrls: [profileUrl],
-      resultsType: 'posts',
-      resultsLimit: 50,
-      onlyPostsNewerThan,
-      proxy: { useApifyProxy: true },
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : 'http://localhost:3000'
+
+    const runOnce = async (useTimeWindow: boolean) => {
+      const input = {
+        directUrls: [profileUrl],
+        resultsType: 'posts',
+        resultsLimit: 50,
+        ...(useTimeWindow ? { onlyPostsNewerThan } : {}),
+        proxy: { useApifyProxy: true },
+      }
+
+      const resp = await fetch(`https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+
+      if (!resp.ok) {
+        const err = await resp.text()
+        throw new Error(err || 'Apify run failed')
+      }
+
+      const items = await resp.json()
+      return Array.isArray(items) ? items : []
     }
 
-    const runResp = await fetch(`https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(input),
-    })
+    let posts = await runOnce(true)
+    let fallbackUsed = false
 
-    if (!runResp.ok) {
-      const err = await runResp.text()
-      return NextResponse.json({ error: 'Apify run failed', details: err }, { status: 500 })
+    if (posts.length === 0 && hours >= 24) {
+      // Retry once without time window
+      posts = await runOnce(false)
+      fallbackUsed = true
     }
 
-    const posts = await runResp.json()
-
-    if (!Array.isArray(posts) || posts.length === 0) {
+    if (posts.length === 0) {
       return NextResponse.json({
         success: true,
         found: 0,
@@ -52,21 +68,23 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    const baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : 'http://localhost:3000'
-
     const ingestResp = await fetch(`${baseUrl}/api/ingest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(posts),
     })
 
+    if (!ingestResp.ok) {
+      const err = await ingestResp.text()
+      return NextResponse.json({ error: 'Ingest failed', details: err }, { status: 500 })
+    }
+
     const ingestData = await ingestResp.json()
 
     return NextResponse.json({
       success: true,
       found: posts.length,
+      fallbackUsed,
       ingestResult: ingestData,
       sample: posts[0] || null,
     })
