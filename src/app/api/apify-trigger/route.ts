@@ -11,14 +11,13 @@ export async function POST(request: NextRequest) {
 
     const token = process.env.APIFY_API_TOKEN
     const envActor = process.env.APIFY_ACTOR_ID
-    const actorId = envActor ? envActor.replace('/', '~') : 'apify~instagram-scraper'
+    const actorId = envActor ? envActor.replace('/', '~') : 'apify~instagram-post-scraper'
 
     if (!token) {
       return NextResponse.json({ error: 'APIFY_API_TOKEN missing' }, { status: 500 })
     }
 
     const cleanHandle = account.trim().replace(/^@/, '')
-    const profileUrl = `https://www.instagram.com/${cleanHandle}/`
     const hours = Number(sinceHours) || 48
     const onlyPostsNewerThan = `${hours} hours`
 
@@ -28,10 +27,10 @@ export async function POST(request: NextRequest) {
 
     const runOnce = async (useTimeWindow: boolean) => {
       const input = {
-        directUrls: [profileUrl],
+        usernames: [cleanHandle],
         resultsType: 'posts',
         resultsLimit: 50,
-        ...(useTimeWindow ? { onlyPostsNewerThan } : {}),
+        ...(useTimeWindow ? { scrapePostsFromLastNDays: Math.max(1, Math.ceil(hours / 24)) } : {}),
         proxy: { useApifyProxy: true },
       }
 
