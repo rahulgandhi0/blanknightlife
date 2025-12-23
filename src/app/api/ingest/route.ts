@@ -60,6 +60,10 @@ async function processPost(
   post: ApifyInstagramPost
 ): Promise<{ success: boolean; reason?: string }> {
   const igPostId = post.id || post.shortCode
+
+  if (!igPostId) {
+    return { success: false, reason: 'Missing Instagram post id' }
+  }
   const postData = post as any
 
   // Skip pinned posts entirely (avoid media downloads/credits waste)
@@ -68,8 +72,9 @@ async function processPost(
   }
 
   // Skip Reels - check productType for "clips" which indicates Reels
-  if (postData.productType === 'clips') {
-    return { success: false, reason: 'Skipped reel' }
+  const productType = (postData.productType || '').toString().toLowerCase()
+  if (productType === 'clips' || productType === 'reel' || productType === 'reels' || productType === 'story') {
+    return { success: false, reason: 'Skipped reel/story' }
   }
 
   // Skip videos - we only want images and carousels (Sidecars)
@@ -94,20 +99,20 @@ async function processPost(
 
   // Priority 1: Check 'images' array (apify/instagram-post-scraper format for Sidecars)
   if (Array.isArray(postData.images) && postData.images.length > 0) {
-    originalMediaUrls.push(...postData.images.filter(Boolean))
+    originalMediaUrls.push(...postData.images.filter(Boolean) as string[])
     if (postData.images.length > 1) postType = 'carousel'
   }
   // Priority 2: Check 'imageUrls' array (alternative format)
-  else if (Array.isArray(postData.imageUrls) && postData.imageUrls.length > 0) {
-    originalMediaUrls.push(...postData.imageUrls.filter(Boolean))
+  if (Array.isArray(postData.imageUrls) && postData.imageUrls.length > 0) {
+    originalMediaUrls.push(...postData.imageUrls.filter(Boolean) as string[])
     if (postData.imageUrls.length > 1) postType = 'carousel'
   }
   // Priority 3: Check 'imageUrl' single field
-  else if (postData.imageUrl) {
-    originalMediaUrls.push(postData.imageUrl)
+  if (postData.imageUrl) {
+    originalMediaUrls.push(postData.imageUrl as string)
   }
   // Priority 4: Extract from childPosts for Sidecars
-  else if (post.type === 'Sidecar' && post.childPosts) {
+  if (post.type === 'Sidecar' && post.childPosts) {
     postType = 'carousel'
     for (const child of post.childPosts) {
       if (child.type === 'Image' && child.displayUrl) {
@@ -116,25 +121,28 @@ async function processPost(
     }
   }
   // Priority 5: Fallback to displayUrl
-  else if (post.displayUrl) {
+  if (post.displayUrl) {
     originalMediaUrls.push(post.displayUrl)
   }
 
-  if (originalMediaUrls.length === 0) {
+  // Deduplicate
+  const uniqueMediaUrls = Array.from(new Set(originalMediaUrls))
+
+  if (uniqueMediaUrls.length === 0) {
     return { success: false, reason: 'No valid media URLs found' }
   }
 
   // Set postType based on Apify type field
-  if (post.type === 'Sidecar' || originalMediaUrls.length > 1) {
+  if (post.type === 'Sidecar' || uniqueMediaUrls.length > 1) {
     postType = 'carousel'
   }
 
   // Upload all media to Supabase Storage (prevent Instagram URL expiry)
   const uploadedUrls: string[] = []
-  for (let i = 0; i < originalMediaUrls.length; i++) {
+  for (let i = 0; i < uniqueMediaUrls.length; i++) {
     const permanentUrl = await uploadMediaToStorage(
       supabase,
-      originalMediaUrls[i],
+      uniqueMediaUrls[i],
       igPostId,
       i
     )
@@ -147,18 +155,38 @@ async function processPost(
     return { success: false, reason: 'Failed to upload any media' }
   }
 
+  // Choose best caption value available
+  const caption =
+    (post.caption as string | null) ??
+    (postData.captionText as string | null) ??
+    (postData.title as string | null) ??
+    null
+
+  // Normalize timestamp to ISO string if possible
+  let postedAt: string | null = null
+  const tsCandidates = [
+    post.timestamp,
+    postData.takenAt,
+    postData.takenAtLocal,
+    postData.takenAtTimestamp ? new Date((postData.takenAtTimestamp as number) * 1000).toISOString() : null,
+  ].filter(Boolean) as string[]
+  if (tsCandidates.length > 0) {
+    const parsed = new Date(tsCandidates[0])
+    postedAt = isNaN(parsed.getTime()) ? null : parsed.toISOString()
+  }
+
   // Insert into database - NO AI generation yet (saves credits, user triggers manually)
   const { error } = await supabase.from('event_discovery').insert({
     status: 'pending',
     source_account: post.ownerUsername,
     post_type: postType,
-    original_caption: post.caption,
+    original_caption: caption,
     ai_generated_caption: null, // Generated on-demand by user
     final_caption: null, // User will edit after AI generation
     media_urls: uploadedUrls,
     ig_post_id: igPostId,
     is_pinned: post.isPinned || false,
-    posted_at_source: post.timestamp,
+    posted_at_source: postedAt,
   } as never)
 
   if (error) {

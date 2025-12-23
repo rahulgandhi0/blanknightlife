@@ -37,11 +37,12 @@ export default function ScrapePage() {
   const [progress, setProgress] = useState<
     { label: string; state: 'idle' | 'active' | 'done' | 'error'; helper?: string }[]
   >([
-    { label: 'Start', state: 'idle' },
-    { label: 'Scrape', state: 'idle' },
+    { label: 'Validate input', state: 'idle' },
+    { label: 'Run Apify', state: 'idle' },
+    { label: 'Filter results', state: 'idle' },
     { label: 'Ingest', state: 'idle' },
-    { label: 'Done', state: 'idle' },
   ])
+  const [logs, setLogs] = useState<string[]>([])
 
   const fetchHistory = async (handle: string) => {
     if (!handle) {
@@ -79,11 +80,12 @@ export default function ScrapePage() {
     setLoading(true)
     setResult(null)
     setScrapeStatus(null)
+    setLogs([])
     setProgress([
-      { label: 'Start', state: 'active' },
-      { label: 'Scrape', state: 'idle' },
+      { label: 'Validate input', state: 'active' },
+      { label: 'Run Apify', state: 'idle' },
+      { label: 'Filter results', state: 'idle' },
       { label: 'Ingest', state: 'idle' },
-      { label: 'Done', state: 'idle' },
     ])
     try {
       const res = await fetch('/api/apify-trigger', {
@@ -93,13 +95,33 @@ export default function ScrapePage() {
       })
       const data = await res.json()
       setResult(data)
+      setLogs(Array.isArray(data.logs) ? data.logs : [])
+
+      const mappedSteps =
+        Array.isArray(data.steps) && data.steps.length > 0
+          ? data.steps.map((step: any) => {
+              const status = step.status as string
+              let state: 'idle' | 'active' | 'done' | 'error' = 'idle'
+              if (status === 'running') state = 'active'
+              else if (status === 'done') state = 'done'
+              else if (status === 'error') state = 'error'
+              return { label: step.label || 'Step', state, helper: step.info }
+            })
+          : progress
+      setProgress(mappedSteps)
+
       if (data.success) {
-        setProgress([
-          { label: 'Start', state: 'done' },
-          { label: 'Scrape', state: 'done', helper: `Found ${data.found || 0}${data.fallbackUsed ? ' (fallback)' : ''}` },
-          { label: 'Ingest', state: 'done', helper: `Processed ${data.ingestResult?.processed || 0}` },
-          { label: 'Done', state: 'done' },
-        ])
+        setProgress((prev) =>
+          prev.map((p) => {
+            if (p.label === 'Run Apify') {
+              return { ...p, state: 'done', helper: `Found ${data.found || 0}${data.fallbackUsed ? ' (fallback)' : ''}` }
+            }
+            if (p.label === 'Ingest') {
+              return { ...p, state: 'done', helper: `Processed ${data.ingestResult?.processed || 0}` }
+            }
+            return p.state === 'idle' ? { ...p, state: 'done' } : p
+          })
+        )
         setScrapeStats({
           found: data.found || 0,
           processed: data.ingestResult?.processed || 0,
@@ -111,20 +133,23 @@ export default function ScrapePage() {
         setScrapeStatus(data.message || '✓ DONE')
         fetchHistory(account.trim())
       } else if (data.error) {
-        setProgress([
-          { label: 'Start', state: 'done' },
-          { label: 'Scrape', state: 'error', helper: data.error },
-          { label: 'Ingest', state: 'idle' },
-          { label: 'Done', state: 'idle' },
-        ])
+        setProgress((prev) =>
+          prev.map((p) =>
+            p.label === 'Run Apify'
+              ? { ...p, state: 'error', helper: data.error }
+              : p.label === 'Validate input'
+                ? { ...p, state: 'done' }
+                : p
+          )
+        )
         setScrapeStatus(data.error)
       }
     } catch (error) {
       setProgress([
-        { label: 'Start', state: 'done' },
-        { label: 'Scrape', state: 'error', helper: 'Request failed' },
+        { label: 'Validate input', state: 'done' },
+        { label: 'Run Apify', state: 'error', helper: 'Request failed' },
+        { label: 'Filter results', state: 'idle' },
         { label: 'Ingest', state: 'idle' },
-        { label: 'Done', state: 'idle' },
       ])
       setResult({ error: 'Request failed' })
     } finally {
@@ -191,11 +216,17 @@ export default function ScrapePage() {
             <div className="flex gap-4 text-xs text-zinc-400">
               {progress.map((step, idx) => (
                 <div key={idx} className="flex flex-col gap-0.5">
-                  <span className={
-                    step.state === 'done' ? 'text-green-400' :
-                    step.state === 'active' ? 'text-white' :
-                    step.state === 'error' ? 'text-red-400' : 'text-zinc-500'
-                  }>
+                  <span
+                    className={
+                      step.state === 'done'
+                        ? 'text-green-400'
+                        : step.state === 'active'
+                          ? 'text-white'
+                          : step.state === 'error'
+                            ? 'text-red-400'
+                            : 'text-zinc-500'
+                    }
+                  >
                     {step.label}
                   </span>
                   {step.helper && <span className="text-[11px] text-zinc-500">{step.helper}</span>}
@@ -218,6 +249,16 @@ export default function ScrapePage() {
                   <div key={i} className="flex items-center justify-between">
                     <span className="text-zinc-500">{d.id}</span>
                     <span className="text-zinc-300">{d.result}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            {logs.length > 0 && (
+              <div className="border border-zinc-800 rounded p-2 text-[11px] text-zinc-400 max-h-40 overflow-y-auto space-y-1">
+                {logs.map((line, i) => (
+                  <div key={i} className="flex gap-2">
+                    <span className="text-zinc-500">•</span>
+                    <span className="text-zinc-300">{line}</span>
                   </div>
                 ))}
               </div>
