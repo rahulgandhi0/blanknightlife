@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
 
     const runOnce = async (useTimeWindow: boolean) => {
       const input = {
-        username: cleanHandle,
+        username: [cleanHandle],
         resultsType: 'posts',
         resultsLimit: 50,
         ...(useTimeWindow ? { scrapePostsFromLastNDays: Math.max(1, Math.ceil(hours / 24)) } : {}),
