@@ -8,7 +8,8 @@ import {
   Calendar, 
   Send, 
   Archive,
-  LayoutDashboard
+  LayoutDashboard,
+  Users
 } from 'lucide-react'
 
 const navigation = [
@@ -18,6 +19,7 @@ const navigation = [
   { name: 'Scheduled', href: '/scheduled', icon: Calendar },
   { name: 'Posted', href: '/posted', icon: Send },
   { name: 'Archived', href: '/archived', icon: Archive },
+  { name: 'Accounts', href: '/accounts', icon: Users },
 ]
 
 interface SidebarProps {

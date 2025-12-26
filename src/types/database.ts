@@ -16,6 +16,22 @@ export interface EventDiscovery {
   scheduled_for: string | null
   posted_at: string | null
   meta_post_id: string | null
+  socialbu_account_ids: number[] | null
+  engagement_likes: number | null
+  engagement_comments: number | null
+  engagement_shares: number | null
+  created_at: string
+  updated_at: string
+}
+
+export interface SocialAccount {
+  id: string
+  socialbu_account_id: number
+  platform: 'instagram' | 'tiktok' | 'twitter' | 'facebook' | 'linkedin' | 'youtube'
+  account_name: string
+  username: string
+  is_active: boolean
+  is_default: boolean
   created_at: string
   updated_at: string
 }
@@ -31,6 +47,15 @@ export interface Database {
           updated_at?: string
         }
         Update: Partial<Omit<EventDiscovery, 'id' | 'created_at'>>
+      }
+      social_accounts: {
+        Row: SocialAccount
+        Insert: Omit<SocialAccount, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<SocialAccount, 'id' | 'created_at'>>
       }
     }
     Views: {}

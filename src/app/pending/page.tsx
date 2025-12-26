@@ -34,22 +34,55 @@ export default function PendingPage() {
   }
 
   const handleApprove = async (id: string, caption: string, scheduledFor: Date) => {
-    const res = await fetch('/api/events', {
+    // First, update the event with approved status and caption
+    const updateRes = await fetch('/api/events', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         id,
         updates: {
-          status: 'scheduled',
+          status: 'approved',
           final_caption: caption,
           scheduled_for: scheduledFor.toISOString(),
         },
       }),
     })
 
-    if (res.ok) {
-      setEvents((prev) => prev.filter((e) => e.id !== id))
+    if (!updateRes.ok) {
+      alert('Failed to approve event')
+      return
     }
+
+    // Then, schedule to SocialBu
+    // Default to account IDs from env, or let user configure later
+    const defaultAccountIds = process.env.NEXT_PUBLIC_SOCIALBU_DEFAULT_ACCOUNTS
+      ? process.env.NEXT_PUBLIC_SOCIALBU_DEFAULT_ACCOUNTS.split(',').map(Number)
+      : []
+
+    if (defaultAccountIds.length > 0) {
+      const scheduleRes = await fetch('/api/socialbu-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId: id,
+          accountIds: defaultAccountIds,
+        }),
+      })
+
+      const scheduleData = await scheduleRes.json()
+      
+      if (!scheduleData.success) {
+        console.error('Failed to schedule to SocialBu:', scheduleData.error)
+        alert(`Post approved but failed to schedule: ${scheduleData.error}. You can reschedule from the Approved tab.`)
+        return
+      }
+    } else {
+      // No default accounts configured - just approve without scheduling to SocialBu
+      console.warn('No SocialBu accounts configured. Event approved but not scheduled to SocialBu.')
+    }
+
+    // Remove from pending list
+    setEvents((prev) => prev.filter((e) => e.id !== id))
   }
 
   const handleDiscard = async (id: string) => {
