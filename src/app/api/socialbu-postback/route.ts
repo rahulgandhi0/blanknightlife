@@ -14,6 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
+import type { Database } from '@/types/database';
 
 export async function POST(request: NextRequest) {
   try {
@@ -70,7 +71,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update the event
-    const updateData: any = {
+    const updateData: Database['public']['Tables']['event_discovery']['Update'] = {
       status: newStatus,
       updated_at: new Date().toISOString(),
     };
