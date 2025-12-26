@@ -82,7 +82,8 @@ export async function POST(request: NextRequest) {
 
     const { error: updateError } = await supabase
       .from('event_discovery')
-      .update(updateData)
+      // Type assertion to satisfy Supabase TS inference in this route
+      .update(updateData as Database['public']['Tables']['event_discovery']['Update'])
       .eq('id', event.id);
 
     if (updateError) {
