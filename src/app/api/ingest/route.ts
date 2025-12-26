@@ -66,6 +66,7 @@ async function processPost(
   if (!igPostId) {
     return { success: false, reason: 'Missing Instagram post id' }
   }
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const postData = post as any
 
   // Skip pinned posts entirely (avoid media downloads/credits waste)

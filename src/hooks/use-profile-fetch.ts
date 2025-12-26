@@ -18,6 +18,5 @@ export function useProfileFetch() {
     return fetch(urlObj.toString(), options)
   }
 
-  return { fetchWithProfile, profileId: currentProfile?.id }
+  return { fetchWithProfile, profileId: currentProfile?.id, currentProfile }
 }
-

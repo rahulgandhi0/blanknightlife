@@ -5,7 +5,6 @@ import { Card } from '@/components/ui/card'
 import { Clock, Calendar, Send, Archive, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
 import { useProfileFetch } from '@/hooks/use-profile-fetch'
-import { useAuth } from '@/contexts/auth-context'
 
 interface Stats {
   pending: number
@@ -38,8 +37,7 @@ const statCards = [
 ]
 
 export default function HomePage() {
-  const { fetchWithProfile, profileId } = useProfileFetch()
-  const { currentProfile } = useAuth()
+  const { fetchWithProfile, profileId, currentProfile } = useProfileFetch()
   const [stats, setStats] = useState<Stats>({ pending: 0, scheduled: 0, posted: 0, archived: 0 })
   const [loading, setLoading] = useState(true)
 

@@ -4,18 +4,13 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Button } from '@/components/ui/button'
-import { ChevronDown, Plus, Settings, LogOut, CheckCircle2, Instagram, Twitter } from 'lucide-react'
+import { ChevronDown, Plus, CheckCircle2, Instagram, Twitter } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export function ProfileSwitcher() {
   const router = useRouter()
-  const { user, currentProfile, profiles, switchProfile, signOut } = useAuth()
+  const { currentProfile, profiles, switchProfile } = useAuth()
   const [open, setOpen] = useState(false)
-
-  if (!user || !currentProfile) {
-    return null
-  }
 
   const getPlatformIcon = (platform: string) => {
     switch (platform) {
@@ -28,8 +23,8 @@ export function ProfileSwitcher() {
     }
   }
 
-  const handleSwitch = async (profileId: string) => {
-    await switchProfile(profileId)
+  const handleSwitch = (profileId: string) => {
+    switchProfile(profileId)
     setOpen(false)
     router.refresh()
   }
@@ -39,14 +34,24 @@ export function ProfileSwitcher() {
     router.push('/profiles/new')
   }
 
-  const handleSettings = () => {
-    setOpen(false)
-    router.push('/settings/account')
-  }
-
-  const handleLogout = async () => {
-    await signOut()
-    router.push('/auth/login')
+  // No profile yet - show add profile prompt
+  if (!currentProfile) {
+    return (
+      <button 
+        onClick={handleAddProfile}
+        className="w-full p-4 border-t border-zinc-800 hover:bg-zinc-900 transition-colors text-left"
+      >
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0">
+            <Plus className="h-5 w-5 text-zinc-400" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium text-white">Add Profile</p>
+            <p className="text-xs text-zinc-500">Connect a social account</p>
+          </div>
+        </div>
+      </button>
+    )
   }
 
   return (
@@ -69,8 +74,8 @@ export function ProfileSwitcher() {
                 </p>
                 {getPlatformIcon(currentProfile.platform)}
               </div>
-              <p className="text-xs text-zinc-500 truncate">
-                {user.email}
+              <p className="text-xs text-zinc-500 truncate capitalize">
+                {currentProfile.platform}
               </p>
             </div>
 
@@ -90,15 +95,6 @@ export function ProfileSwitcher() {
         sideOffset={8}
       >
         <div className="space-y-1">
-          {/* Current User Info */}
-          <div className="px-3 py-2 mb-2">
-            <p className="text-xs font-medium text-zinc-400 mb-1">Signed in as</p>
-            <p className="text-sm text-white font-medium truncate">{user.full_name}</p>
-            <p className="text-xs text-zinc-500 truncate">{user.email}</p>
-          </div>
-
-          <div className="h-px bg-zinc-800 my-2" />
-
           {/* Profile List */}
           <div className="space-y-1">
             <p className="px-3 py-1 text-xs font-medium text-zinc-400">Switch Profile</p>
@@ -142,27 +138,8 @@ export function ProfileSwitcher() {
             <Plus className="h-4 w-4" />
             <span>Add Profile</span>
           </button>
-
-          <button
-            onClick={handleSettings}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm text-zinc-400 hover:bg-zinc-800 hover:text-white transition-colors"
-          >
-            <Settings className="h-4 w-4" />
-            <span>Account Settings</span>
-          </button>
-
-          <div className="h-px bg-zinc-800 my-2" />
-
-          <button
-            onClick={handleLogout}
-            className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm text-red-400 hover:bg-red-950/20 transition-colors"
-          >
-            <LogOut className="h-4 w-4" />
-            <span>Log Out</span>
-          </button>
         </div>
       </PopoverContent>
     </Popover>
   )
 }
-

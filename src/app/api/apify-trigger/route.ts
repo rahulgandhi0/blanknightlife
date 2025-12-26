@@ -27,6 +27,7 @@ const typeFromRaw = (rawType?: string) => {
   return 'Image'
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const normalizePost = (raw: any): ApifyInstagramPost => {
   const short = raw.shortCode || raw.shortcode || raw.code || ''
   const urlFromShort = short ? `https://www.instagram.com/p/${short}/` : ''
@@ -60,6 +61,7 @@ const normalizePost = (raw: any): ApifyInstagramPost => {
     raw.childPosts ||
     (raw.children &&
       Array.isArray(raw.children) &&
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       raw.children.map((c: any) => ({
         type: typeFromRaw(c.type || c.__typename),
         displayUrl: c.displayUrl || c.display_url || c.imageUrl || c.thumbnailUrl,
@@ -188,6 +190,7 @@ export async function POST(request: NextRequest) {
     steps = updateStep(steps, 'Run Apify', 'running', `Actor: ${primaryActor}`)
     log(`Running Apify actor ${primaryActor} for @${cleanHandle}`)
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let rawPosts: any[] = []
     let fallbackUsed = false
 
@@ -222,6 +225,7 @@ export async function POST(request: NextRequest) {
 
     const filtered = normalized.filter((post) => {
       // Skip pinned
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (post.isPinned || (post as any).pinned) return false
       // Skip reels/stories via productType
       const productType = (post.productType || '').toString().toLowerCase()

@@ -99,6 +99,7 @@ export default function ScrapePage() {
 
       const mappedSteps =
         Array.isArray(data.steps) && data.steps.length > 0
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           ? data.steps.map((step: any) => {
               const status = step.status as string
               let state: 'idle' | 'active' | 'done' | 'error' = 'idle'

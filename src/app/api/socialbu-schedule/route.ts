@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SocialBuClient } from '@/lib/socialbu';
 import { createClient } from '@/lib/supabase/server';
+import type { Database } from '@/types/database';
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,8 +44,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const typedEvent = event as Database['public']['Tables']['event_discovery']['Row'];
+
     // Validate event status
-    if (event.status !== 'approved') {
+    if (typedEvent.status !== 'approved') {
       return NextResponse.json(
         { success: false, error: 'Only approved events can be scheduled' },
         { status: 400 }
@@ -52,21 +55,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Validate required fields
-    if (!event.final_caption) {
+    if (!typedEvent.final_caption) {
       return NextResponse.json(
         { success: false, error: 'Event must have a final caption' },
         { status: 400 }
       );
     }
 
-    if (!event.scheduled_for) {
+    if (!typedEvent.scheduled_for) {
       return NextResponse.json(
         { success: false, error: 'Event must have a scheduled time' },
         { status: 400 }
       );
     }
 
-    if (!event.media_urls || event.media_urls.length === 0) {
+    if (!typedEvent.media_urls || typedEvent.media_urls.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Event must have at least one media file' },
         { status: 400 }
@@ -81,9 +84,9 @@ export async function POST(request: NextRequest) {
 
     const result = await client.schedulePostWithMedia(
       accountIds,
-      event.final_caption,
-      event.media_urls,
-      new Date(event.scheduled_for),
+      typedEvent.final_caption,
+      typedEvent.media_urls,
+      new Date(typedEvent.scheduled_for),
       postbackUrl
     );
 
@@ -99,7 +102,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Update event status to 'scheduled' and store SocialBu post ID
-    const { error: updateError } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: updateError } = await (supabase as any)
       .from('event_discovery')
       .update({
         status: 'scheduled',
@@ -118,7 +122,7 @@ export async function POST(request: NextRequest) {
       message: 'Post scheduled successfully',
       post_id: result.post_id,
       event_id: eventId,
-      scheduled_for: event.scheduled_for,
+      scheduled_for: typedEvent.scheduled_for,
     });
 
   } catch (error) {

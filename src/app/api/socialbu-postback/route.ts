@@ -46,6 +46,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Type the event row
+    const typedEvent = event as Database['public']['Tables']['event_discovery']['Row'];
+
     // Update event status based on SocialBu status
     let newStatus: EventStatus;
     let posted_at: string | null = null;
@@ -80,11 +83,11 @@ export async function POST(request: NextRequest) {
       updateData.posted_at = posted_at;
     }
 
-    const { error: updateError } = await supabase
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { error: updateError } = await (supabase as any)
       .from('event_discovery')
-      // Type assertion to satisfy Supabase TS inference in this route
-      .update(updateData as Database['public']['Tables']['event_discovery']['Update'])
-      .eq('id', event.id);
+      .update(updateData)
+      .eq('id', typedEvent.id);
 
     if (updateError) {
       console.error('Failed to update event status:', updateError);
@@ -94,12 +97,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`Event ${event.id} updated to status: ${newStatus}`);
+    console.log(`Event ${typedEvent.id} updated to status: ${newStatus}`);
 
     return NextResponse.json({
       success: true,
       message: 'Event status updated',
-      event_id: event.id,
+      event_id: typedEvent.id,
       new_status: newStatus,
     });
 

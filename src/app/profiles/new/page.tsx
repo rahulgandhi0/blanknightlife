@@ -14,7 +14,7 @@ import type { SocialBuAccount } from '@/lib/socialbu'
 
 export default function NewProfilePage() {
   const router = useRouter()
-  const { user, profiles, refreshProfiles } = useAuth()
+  const { profiles, refreshProfiles } = useAuth()
   const supabase = createClient()
   
   const [loading, setLoading] = useState(false)
@@ -36,7 +36,7 @@ export default function NewProfilePage() {
         const data = await response.json()
         
         if (data.success) {
-          // Filter out accounts already connected to this user's profiles
+          // Filter out accounts already connected to profiles
           const connectedIds = profiles.map(p => p.socialbu_account_id)
           const availableAccounts = data.accounts.filter(
             (acc: SocialBuAccount) => !connectedIds.includes(acc.id)
@@ -59,7 +59,7 @@ export default function NewProfilePage() {
       setProfileData({
         ...profileData,
         socialbuAccountId: accountId,
-        platform: account.type as any,
+        platform: account.type as 'instagram' | 'tiktok' | 'twitter',
         handle: account.username,
         name: profileData.name || account.name,
       })
@@ -68,13 +68,12 @@ export default function NewProfilePage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!user) return
 
     setLoading(true)
 
     try {
-      const { error } = await supabase.from('profiles').insert({
-        user_id: user.id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await (supabase.from('profiles') as any).insert({
         name: profileData.name,
         handle: profileData.handle,
         socialbu_account_id: parseInt(profileData.socialbuAccountId),
@@ -110,7 +109,7 @@ export default function NewProfilePage() {
           <div className="mb-6">
             <h1 className="text-2xl font-semibold text-white mb-2">Add New Profile</h1>
             <p className="text-sm text-zinc-500">
-              Connect another SocialBu account to manage multiple brands
+              Connect a SocialBu account to manage content
             </p>
           </div>
 
@@ -226,4 +225,3 @@ export default function NewProfilePage() {
     </div>
   )
 }
-
