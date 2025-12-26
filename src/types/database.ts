@@ -1,8 +1,34 @@
 export type EventStatus = 'pending' | 'approved' | 'scheduled' | 'posted' | 'archived' | 'discarded'
 export type PostType = 'image' | 'carousel'
+export type Platform = 'instagram' | 'tiktok' | 'twitter' | 'facebook' | 'linkedin' | 'youtube'
+
+export interface User {
+  id: string
+  full_name: string
+  email: string
+  phone: string | null
+  avatar_url: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Profile {
+  id: string
+  user_id: string
+  name: string
+  handle: string | null
+  avatar_url: string | null
+  socialbu_account_id: number
+  platform: Platform
+  is_active: boolean
+  created_at: string
+  updated_at: string
+}
 
 export interface EventDiscovery {
   id: string
+  profile_id: string
+  user_id: string
   status: EventStatus
   source_account: string
   post_type: PostType
@@ -26,8 +52,9 @@ export interface EventDiscovery {
 
 export interface SocialAccount {
   id: string
+  profile_id: string
   socialbu_account_id: number
-  platform: 'instagram' | 'tiktok' | 'twitter' | 'facebook' | 'linkedin' | 'youtube'
+  platform: Platform
   account_name: string
   username: string
   is_active: boolean
@@ -39,6 +66,23 @@ export interface SocialAccount {
 export interface Database {
   public: {
     Tables: {
+      users: {
+        Row: User
+        Insert: Omit<User, 'created_at' | 'updated_at'> & {
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<User, 'id' | 'created_at'>>
+      }
+      profiles: {
+        Row: Profile
+        Insert: Omit<Profile, 'id' | 'created_at' | 'updated_at'> & {
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: Partial<Omit<Profile, 'id' | 'created_at'>>
+      }
       event_discovery: {
         Row: EventDiscovery
         Insert: Omit<EventDiscovery, 'id' | 'created_at' | 'updated_at'> & {
@@ -59,7 +103,12 @@ export interface Database {
       }
     }
     Views: {}
-    Functions: {}
+    Functions: {
+      get_user_active_profile: {
+        Args: { user_uuid: string }
+        Returns: string
+      }
+    }
     Enums: {}
   }
 }

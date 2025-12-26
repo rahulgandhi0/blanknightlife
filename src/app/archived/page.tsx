@@ -8,17 +8,20 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { EventDiscovery } from '@/types/database'
+import { useProfileFetch } from '@/hooks/use-profile-fetch'
 
 export default function ArchivedPage() {
+  const { fetchWithProfile, profileId } = useProfileFetch()
   const [events, setEvents] = useState<EventDiscovery[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchEvents = useCallback(async () => {
+    if (!profileId) return
     try {
       // Fetch both archived and discarded
       const [archived, discarded] = await Promise.all([
-        fetch('/api/events?status=archived').then(r => r.json()),
-        fetch('/api/events?status=discarded').then(r => r.json()),
+        fetchWithProfile('/api/events?status=archived').then(r => r.json()),
+        fetchWithProfile('/api/events?status=discarded').then(r => r.json()),
       ])
       setEvents([...(archived.events || []), ...(discarded.events || [])])
     } catch (error) {
@@ -26,7 +29,7 @@ export default function ArchivedPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchWithProfile, profileId])
 
   useEffect(() => {
     fetchEvents()

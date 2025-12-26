@@ -57,7 +57,9 @@ async function uploadMediaToStorage(
 // Process a single post from Apify
 async function processPost(
   supabase: ReturnType<typeof createServiceClient>,
-  post: ApifyInstagramPost
+  post: ApifyInstagramPost,
+  profileId: string,
+  userId: string
 ): Promise<{ success: boolean; reason?: string }> {
   const igPostId = post.id || post.shortCode
 
@@ -187,6 +189,8 @@ async function processPost(
     ig_post_id: igPostId,
     is_pinned: post.isPinned || false,
     posted_at_source: postedAt,
+    profile_id: profileId,
+    user_id: userId,
   } as never)
 
   if (error) {
@@ -207,12 +211,24 @@ async function fetchApifyDataset(datasetId: string): Promise<ApifyInstagramPost[
   return response.json()
 }
 
-// POST /api/ingest
+// POST /api/ingest?profile_id=xxx&user_id=xxx
 // Receives posts directly OR Apify webhook payload
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const supabase = createServiceClient()
+
+    // Get profile_id and user_id from query params or body
+    const searchParams = request.nextUrl.searchParams
+    const profileId = searchParams.get('profile_id') || body.profile_id
+    const userId = searchParams.get('user_id') || body.user_id
+
+    if (!profileId || !userId) {
+      return NextResponse.json(
+        { error: 'Missing profile_id and user_id. Required for multi-tenant support.' },
+        { status: 400 }
+      )
+    }
 
     // Handle multiple payload formats
     let posts: ApifyInstagramPost[] = []
@@ -238,7 +254,7 @@ export async function POST(request: NextRequest) {
       )
     }
     
-    console.log(`Processing ${posts.length} posts from ingest`)
+    console.log(`Processing ${posts.length} posts from ingest for profile ${profileId}`)
 
     const results = {
       processed: 0,
@@ -248,7 +264,7 @@ export async function POST(request: NextRequest) {
     }
 
     for (const post of posts) {
-      const { success, reason } = await processPost(supabase, post)
+      const { success, reason } = await processPost(supabase, post, profileId, userId)
       
       if (success) {
         results.processed++

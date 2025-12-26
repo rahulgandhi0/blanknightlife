@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { ProfileSwitcher } from '@/components/profile-switcher'
 import { 
   Clock, 
   Calendar, 
@@ -66,12 +67,7 @@ export function Sidebar({ counts = {} }: SidebarProps) {
         })}
       </nav>
 
-      <div className="flex-shrink-0 p-6 border-t border-zinc-800">
-        <div className="rounded-lg bg-zinc-900 p-4">
-          <p className="text-xs text-zinc-500 mb-2 font-medium uppercase tracking-wider">API Endpoint</p>
-          <code className="text-xs text-zinc-400 break-all font-mono">/api/ingest</code>
-        </div>
-      </div>
+      <ProfileSwitcher />
     </aside>
   )
 }

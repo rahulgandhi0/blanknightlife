@@ -1,21 +1,34 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServiceClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase/server'
 import type { EventStatus, EventDiscovery } from '@/types/database'
 
-// GET /api/events?status=pending
+// GET /api/events?status=pending&profile_id=xxx
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const status = searchParams.get('status') as EventStatus | null
+  const profileId = searchParams.get('profile_id')
   const limit = parseInt(searchParams.get('limit') || '50')
   const offset = parseInt(searchParams.get('offset') || '0')
 
-  const supabase = createServiceClient()
+  const supabase = await createClient()
+
+  // Get current user
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
 
   let query = supabase
     .from('event_discovery')
     .select('*')
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
+
+  // Filter by profile_id if provided (most common case)
+  if (profileId) {
+    query = query.eq('profile_id', profileId)
+  }
 
   if (status) {
     query = query.eq('status', status)
@@ -33,6 +46,15 @@ export async function GET(request: NextRequest) {
 // PATCH /api/events - Update event(s)
 export async function PATCH(request: NextRequest) {
   try {
+    const supabase = await createClient()
+
+    // Get current user
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { id, updates } = body as { 
       id: string
@@ -45,8 +67,6 @@ export async function PATCH(request: NextRequest) {
         { status: 400 }
       )
     }
-
-    const supabase = createServiceClient()
 
     const { data, error } = await supabase
       .from('event_discovery')
@@ -70,14 +90,21 @@ export async function PATCH(request: NextRequest) {
 
 // DELETE /api/events?id=xxx - Delete event
 export async function DELETE(request: NextRequest) {
+  const supabase = await createClient()
+
+  // Get current user
+  const { data: { user }, error: authError } = await supabase.auth.getUser()
+  
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  }
+
   const searchParams = request.nextUrl.searchParams
   const id = searchParams.get('id')
 
   if (!id) {
     return NextResponse.json({ error: 'Missing id' }, { status: 400 })
   }
-
-  const supabase = createServiceClient()
 
   const { error } = await supabase
     .from('event_discovery')

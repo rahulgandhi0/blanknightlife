@@ -7,14 +7,17 @@ import { Send, ExternalLink } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import type { EventDiscovery } from '@/types/database'
+import { useProfileFetch } from '@/hooks/use-profile-fetch'
 
 export default function PostedPage() {
+  const { fetchWithProfile, profileId } = useProfileFetch()
   const [events, setEvents] = useState<EventDiscovery[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchEvents = useCallback(async () => {
+    if (!profileId) return
     try {
-      const res = await fetch('/api/events?status=posted')
+      const res = await fetchWithProfile('/api/events?status=posted')
       const data = await res.json()
       setEvents(data.events || [])
     } catch (error) {
@@ -22,7 +25,7 @@ export default function PostedPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchWithProfile, profileId])
 
   useEffect(() => {
     fetchEvents()

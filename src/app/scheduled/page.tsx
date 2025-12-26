@@ -8,14 +8,17 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import type { EventDiscovery } from '@/types/database'
+import { useProfileFetch } from '@/hooks/use-profile-fetch'
 
 export default function ScheduledPage() {
+  const { fetchWithProfile, profileId } = useProfileFetch()
   const [events, setEvents] = useState<EventDiscovery[]>([])
   const [loading, setLoading] = useState(true)
 
   const fetchEvents = useCallback(async () => {
+    if (!profileId) return
     try {
-      const res = await fetch('/api/events?status=scheduled')
+      const res = await fetchWithProfile('/api/events?status=scheduled')
       const data = await res.json()
       // Sort by scheduled_for date
       const sorted = (data.events || []).sort((a: EventDiscovery, b: EventDiscovery) => {
@@ -27,7 +30,7 @@ export default function ScheduledPage() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [fetchWithProfile, profileId])
 
   useEffect(() => {
     fetchEvents()

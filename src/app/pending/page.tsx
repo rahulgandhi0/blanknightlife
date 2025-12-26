@@ -5,15 +5,18 @@ import { EventCard } from '@/components/event-card'
 import { Clock, RefreshCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { EventDiscovery } from '@/types/database'
+import { useProfileFetch } from '@/hooks/use-profile-fetch'
 
 export default function PendingPage() {
+  const { fetchWithProfile, profileId } = useProfileFetch()
   const [events, setEvents] = useState<EventDiscovery[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   const fetchEvents = useCallback(async () => {
+    if (!profileId) return
     try {
-      const res = await fetch('/api/events?status=pending')
+      const res = await fetchWithProfile('/api/events?status=pending')
       const data = await res.json()
       setEvents(data.events || [])
     } catch (error) {
@@ -22,7 +25,7 @@ export default function PendingPage() {
       setLoading(false)
       setRefreshing(false)
     }
-  }, [])
+  }, [fetchWithProfile, profileId])
 
   useEffect(() => {
     fetchEvents()

@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/sidebar";
+import { AuthProvider } from "@/contexts/auth-context";
+import { LayoutContent } from "@/components/layout-content";
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-sans",
@@ -28,10 +29,9 @@ export default function RootLayout({
       <body
         className={`${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans antialiased bg-zinc-950 text-white min-h-screen`}
       >
-        <Sidebar />
-        <main className="pl-64 min-h-screen">
-          {children}
-        </main>
+        <AuthProvider>
+          <LayoutContent>{children}</LayoutContent>
+        </AuthProvider>
       </body>
     </html>
   );

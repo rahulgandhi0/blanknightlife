@@ -1,31 +1,32 @@
-import { createServiceClient } from '@/lib/supabase/server'
+'use client'
+
+import { useEffect, useState } from 'react'
 import { Card } from '@/components/ui/card'
 import { Clock, Calendar, Send, Archive, TrendingUp } from 'lucide-react'
 import Link from 'next/link'
+import { useProfileFetch } from '@/hooks/use-profile-fetch'
+import { useAuth } from '@/contexts/auth-context'
 
-export const dynamic = 'force-dynamic'
-export const revalidate = 0
+interface Stats {
+  pending: number
+  scheduled: number
+  posted: number
+  archived: number
+}
 
-async function getStats() {
-  const supabase = createServiceClient()
-  
+async function getStats(fetchWithProfile: (url: string) => Promise<Response>): Promise<Stats> {
   const [pending, scheduled, posted, archived] = await Promise.all([
-    supabase.from('event_discovery').select('id', { count: 'exact', head: true }).eq('status', 'pending'),
-    supabase.from('event_discovery').select('id', { count: 'exact', head: true }).eq('status', 'scheduled'),
-    supabase.from('event_discovery').select('id', { count: 'exact', head: true }).eq('status', 'posted'),
-    supabase.from('event_discovery').select('id', { count: 'exact', head: true }).eq('status', 'archived'),
+    fetchWithProfile('/api/events?status=pending').then(r => r.json()),
+    fetchWithProfile('/api/events?status=scheduled').then(r => r.json()),
+    fetchWithProfile('/api/events?status=posted').then(r => r.json()),
+    fetchWithProfile('/api/events?status=archived').then(r => r.json()),
   ])
 
-  if (pending.error) console.error('Pending count error:', pending.error)
-  if (scheduled.error) console.error('Scheduled count error:', scheduled.error)
-  if (posted.error) console.error('Posted count error:', posted.error)
-  if (archived.error) console.error('Archived count error:', archived.error)
-
   return {
-    pending: pending.count || 0,
-    scheduled: scheduled.count || 0,
-    posted: posted.count || 0,
-    archived: archived.count || 0,
+    pending: pending.events?.length || 0,
+    scheduled: scheduled.events?.length || 0,
+    posted: posted.events?.length || 0,
+    archived: archived.events?.length || 0,
   }
 }
 
@@ -36,24 +37,40 @@ const statCards = [
   { key: 'archived', label: 'Archived', icon: Archive, href: '/archived', color: 'from-zinc-500 to-zinc-600' },
 ]
 
-export default async function HomePage() {
-  let stats = { pending: 0, scheduled: 0, posted: 0, archived: 0 }
-  
-  try {
-    stats = await getStats()
-  } catch (error) {
-    // Supabase not configured yet - show empty state
-    console.error('Failed to fetch stats:', error)
-  }
+export default function HomePage() {
+  const { fetchWithProfile, profileId } = useProfileFetch()
+  const { currentProfile } = useAuth()
+  const [stats, setStats] = useState<Stats>({ pending: 0, scheduled: 0, posted: 0, archived: 0 })
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (!profileId) return
+    
+    getStats(fetchWithProfile)
+      .then(setStats)
+      .catch((error) => console.error('Failed to fetch stats:', error))
+      .finally(() => setLoading(false))
+  }, [fetchWithProfile, profileId])
 
   const total = Object.values(stats).reduce((a, b) => a + b, 0)
+
+  if (loading) {
+    return (
+      <div className="p-8">
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold tracking-tight mb-2">Dashboard</h1>
+          <p className="text-zinc-400">Loading...</p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight mb-2">Dashboard</h1>
         <p className="text-zinc-400">
-          Content curation overview
+          {currentProfile?.name || 'Content curation overview'}
         </p>
       </div>
 
