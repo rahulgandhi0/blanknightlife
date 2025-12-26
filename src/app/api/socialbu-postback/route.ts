@@ -14,7 +14,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import type { Database } from '@/types/database';
+import type { Database, EventStatus } from '@/types/database';
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update event status based on SocialBu status
-    let newStatus: string;
+    let newStatus: EventStatus;
     let posted_at: string | null = null;
 
     switch (status) {
