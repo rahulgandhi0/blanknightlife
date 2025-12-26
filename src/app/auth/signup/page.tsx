@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
-import { Loader2, Check, X } from 'lucide-react'
+import { Loader2, Check, X, Mail } from 'lucide-react'
 
 // Phone number formatter
 function formatPhoneNumber(value: string): string {
@@ -36,6 +36,7 @@ export default function SignUpPage() {
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+  const [needsEmailConfirmation, setNeedsEmailConfirmation] = useState(false)
 
   // Password match indicator
   const passwordsMatch = formData.password && formData.confirmPassword && formData.password === formData.confirmPassword
@@ -70,7 +71,7 @@ export default function SignUpPage() {
 
     console.log('Attempting signup with:', { email: formData.email, fullName: formData.fullName })
 
-    const { error: signUpError } = await signUp(
+    const { error: signUpError, needsEmailConfirmation: needsConfirmation } = await signUp(
       formData.email,
       formData.password,
       formData.fullName,
@@ -82,6 +83,13 @@ export default function SignUpPage() {
     if (signUpError) {
       console.error('Signup error:', signUpError)
       setError(signUpError.message || 'Failed to create account. Please try again.')
+      return
+    }
+
+    // If email confirmation is required, show message instead of redirecting
+    if (needsConfirmation) {
+      console.log('Email confirmation required')
+      setNeedsEmailConfirmation(true)
       return
     }
 
@@ -102,13 +110,61 @@ export default function SignUpPage() {
         </div>
 
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-semibold text-white mb-2">Create your account</h1>
+          <h1 className="text-2xl font-semibold text-white mb-2">
+            {needsEmailConfirmation ? 'Check your email' : 'Create your account'}
+          </h1>
           <p className="text-sm text-zinc-500">
-            Manage your nightlife content across multiple brands
+            {needsEmailConfirmation 
+              ? 'We sent a confirmation link to your email'
+              : 'Manage your nightlife content across multiple brands'
+            }
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {needsEmailConfirmation ? (
+          <div className="space-y-6">
+            {/* Email Confirmation Message */}
+            <div className="p-6 rounded-lg bg-violet-950/20 border border-violet-900/50">
+              <div className="flex items-start gap-4">
+                <div className="h-12 w-12 rounded-full bg-violet-600/20 flex items-center justify-center flex-shrink-0">
+                  <Mail className="h-6 w-6 text-violet-400" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold text-white mb-2">Confirm your email address</h3>
+                  <p className="text-sm text-zinc-400 mb-4">
+                    We've sent a confirmation link to <strong className="text-white">{formData.email}</strong>
+                  </p>
+                  <p className="text-sm text-zinc-500">
+                    Click the link in the email to activate your account. You can close this page and return after confirming.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-3">
+              <Button
+                onClick={() => router.push('/auth/login')}
+                className="w-full h-11 bg-violet-600 hover:bg-violet-500 text-white font-semibold"
+              >
+                Go to Login
+              </Button>
+              
+              <div className="text-center">
+                <button
+                  onClick={() => {
+                    setNeedsEmailConfirmation(false)
+                    setFormData({ fullName: '', email: '', phone: '', password: '', confirmPassword: '' })
+                  }}
+                  className="text-sm text-violet-400 hover:text-violet-300"
+                >
+                  Sign up with a different email
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
           {/* Full Name */}
           <div>
             <Label htmlFor="fullName" className="text-zinc-300">
@@ -229,14 +285,17 @@ export default function SignUpPage() {
             )}
           </Button>
         </form>
+        )}
 
-        {/* Login Link */}
-        <p className="text-center text-sm text-zinc-500 mt-6">
-          Already have an account?{' '}
-          <Link href="/auth/login" className="text-violet-400 hover:text-violet-300">
-            Log in
-          </Link>
-        </p>
+        {/* Login Link - Only show if not in email confirmation state */}
+        {!needsEmailConfirmation && (
+          <p className="text-center text-sm text-zinc-500 mt-6">
+            Already have an account?{' '}
+            <Link href="/auth/login" className="text-violet-400 hover:text-violet-300">
+              Log in
+            </Link>
+          </p>
+        )}
       </Card>
     </div>
   )

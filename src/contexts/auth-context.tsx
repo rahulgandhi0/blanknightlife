@@ -11,7 +11,7 @@ interface AuthContextType {
   currentProfile: Profile | null
   profiles: Profile[]
   loading: boolean
-  signUp: (email: string, password: string, fullName: string, phone?: string) => Promise<{ error: Error | null }>
+  signUp: (email: string, password: string, fullName: string, phone?: string) => Promise<{ error: Error | null; needsEmailConfirmation?: boolean }>
   signIn: (email: string, password: string) => Promise<{ error: Error | null }>
   signOut: () => Promise<void>
   switchProfile: (profileId: string) => Promise<void>
@@ -114,8 +114,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) return { error }
 
-      // User record is auto-created by database trigger
-      return { error: null }
+      // Check if email confirmation is required
+      // If user is null but no error, email confirmation is enabled
+      const needsEmailConfirmation = !data.user && !error
+
+      // User record is auto-created by database trigger (if email confirmation is disabled)
+      return { error: null, needsEmailConfirmation }
     } catch (error) {
       return { error: error as Error }
     }
