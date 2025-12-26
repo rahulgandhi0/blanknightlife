@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Find the event with this SocialBu post ID
-    const supabase = createClient();
+    const supabase = await createClient();
     const { data: event, error: fetchError } = await supabase
       .from('event_discovery')
       .select('*')
