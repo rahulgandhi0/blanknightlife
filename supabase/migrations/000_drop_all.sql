@@ -2,6 +2,10 @@
 -- DROP EVERYTHING - Nuclear Option
 -- ============================================================================
 -- This drops ALL tables in the public schema, ALL functions, ALL storage
+-- Run this FIRST, then run 002_remove_auth.sql to recreate
+
+-- Drop auth trigger first (before dropping functions)
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 
 -- Drop all tables in public schema (dynamically)
 DO $$ 
@@ -36,11 +40,26 @@ DECLARE
 BEGIN
     FOR bucket_record IN (SELECT id FROM storage.buckets)
     LOOP
+        -- Delete all objects in the bucket first
         DELETE FROM storage.objects WHERE bucket_id = bucket_record.id;
+        -- Then delete the bucket
         DELETE FROM storage.buckets WHERE id = bucket_record.id;
     END LOOP;
+EXCEPTION WHEN OTHERS THEN
+    -- Ignore errors (bucket might not exist)
+    NULL;
+END $$;
+
+-- Drop storage policies
+DO $$
+BEGIN
+    DROP POLICY IF EXISTS "Public read access" ON storage.objects;
+    DROP POLICY IF EXISTS "Authenticated users can upload" ON storage.objects;
+    DROP POLICY IF EXISTS "Anyone can upload" ON storage.objects;
+    DROP POLICY IF EXISTS "Anyone can delete" ON storage.objects;
 EXCEPTION WHEN OTHERS THEN
     NULL;
 END $$;
 
 -- Done! Everything in public schema is now gone.
+-- Now run 002_remove_auth.sql to recreate the schema.
