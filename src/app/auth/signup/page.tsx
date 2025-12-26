@@ -8,7 +8,20 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card } from '@/components/ui/card'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Check, X } from 'lucide-react'
+
+// Phone number formatter
+function formatPhoneNumber(value: string): string {
+  // Remove all non-digits
+  const digits = value.replace(/\D/g, '')
+  
+  // Format as +1 (XXX) XXX-XXXX
+  if (digits.length === 0) return ''
+  if (digits.length <= 1) return `+${digits}`
+  if (digits.length <= 4) return `+${digits.slice(0, 1)} (${digits.slice(1)}`
+  if (digits.length <= 7) return `+${digits.slice(0, 1)} (${digits.slice(1, 4)}) ${digits.slice(4)}`
+  return `+${digits.slice(0, 1)} (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7, 11)}`
+}
 
 export default function SignUpPage() {
   const router = useRouter()
@@ -23,6 +36,15 @@ export default function SignUpPage() {
   })
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
+
+  // Password match indicator
+  const passwordsMatch = formData.password && formData.confirmPassword && formData.password === formData.confirmPassword
+  const passwordsDontMatch = formData.password && formData.confirmPassword && formData.password !== formData.confirmPassword
+
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatPhoneNumber(e.target.value)
+    setFormData({ ...formData, phone: formatted })
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -46,6 +68,8 @@ export default function SignUpPage() {
 
     setLoading(true)
 
+    console.log('Attempting signup with:', { email: formData.email, fullName: formData.fullName })
+
     const { error: signUpError } = await signUp(
       formData.email,
       formData.password,
@@ -56,10 +80,12 @@ export default function SignUpPage() {
     setLoading(false)
 
     if (signUpError) {
-      setError(signUpError.message)
+      console.error('Signup error:', signUpError)
+      setError(signUpError.message || 'Failed to create account. Please try again.')
       return
     }
 
+    console.log('Signup successful, redirecting to profile setup')
     // Success - redirect to profile setup
     router.push('/auth/setup-profile')
   }
@@ -124,10 +150,12 @@ export default function SignUpPage() {
               id="phone"
               type="tel"
               value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              onChange={handlePhoneChange}
               className="mt-1.5 bg-zinc-900 border-zinc-800 text-white"
               placeholder="+1 (555) 123-4567"
+              maxLength={18}
             />
+            <p className="text-xs text-zinc-500 mt-1">Auto-formatted as you type</p>
           </div>
 
           {/* Password */}
@@ -153,15 +181,29 @@ export default function SignUpPage() {
             <Label htmlFor="confirmPassword" className="text-zinc-300">
               Confirm Password *
             </Label>
-            <Input
-              id="confirmPassword"
-              type="password"
-              value={formData.confirmPassword}
-              onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-              className="mt-1.5 bg-zinc-900 border-zinc-800 text-white"
-              placeholder="••••••••"
-              required
-            />
+            <div className="relative">
+              <Input
+                id="confirmPassword"
+                type="password"
+                value={formData.confirmPassword}
+                onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                className="mt-1.5 bg-zinc-900 border-zinc-800 text-white pr-10"
+                placeholder="••••••••"
+                required
+              />
+              {passwordsMatch && (
+                <Check className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-green-500" />
+              )}
+              {passwordsDontMatch && (
+                <X className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 text-red-500" />
+              )}
+            </div>
+            {passwordsDontMatch && (
+              <p className="text-xs text-red-400 mt-1">Passwords do not match</p>
+            )}
+            {passwordsMatch && (
+              <p className="text-xs text-green-400 mt-1">Passwords match</p>
+            )}
           </div>
 
           {/* Error Message */}
