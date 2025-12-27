@@ -8,7 +8,7 @@ import type { EventDiscovery } from '@/types/database'
 import { useProfileFetch } from '@/hooks/use-profile-fetch'
 
 export default function PendingPage() {
-  const { fetchWithProfile, profileId } = useProfileFetch()
+  const { fetchWithProfile, profileId, currentProfile } = useProfileFetch()
   const [events, setEvents] = useState<EventDiscovery[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -56,19 +56,14 @@ export default function PendingPage() {
       return
     }
 
-    // Then, schedule to SocialBu
-    // Default to account IDs from env, or let user configure later
-    const defaultAccountIds = process.env.NEXT_PUBLIC_SOCIALBU_DEFAULT_ACCOUNTS
-      ? process.env.NEXT_PUBLIC_SOCIALBU_DEFAULT_ACCOUNTS.split(',').map(Number)
-      : []
-
-    if (defaultAccountIds.length > 0) {
+    // Then, schedule to SocialBu using the profile's linked account
+    if (currentProfile?.socialbu_account_id) {
       const scheduleRes = await fetch('/api/socialbu-schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           eventId: id,
-          accountIds: defaultAccountIds,
+          accountIds: [currentProfile.socialbu_account_id],
         }),
       })
 
@@ -76,12 +71,11 @@ export default function PendingPage() {
       
       if (!scheduleData.success) {
         console.error('Failed to schedule to SocialBu:', scheduleData.error)
-        alert(`Post approved but failed to schedule: ${scheduleData.error}. You can reschedule from the Approved tab.`)
+        alert(`Post approved but failed to schedule: ${scheduleData.error}. You can reschedule later.`)
         return
       }
     } else {
-      // No default accounts configured - just approve without scheduling to SocialBu
-      console.warn('No SocialBu accounts configured. Event approved but not scheduled to SocialBu.')
+      console.warn('No SocialBu account linked to profile. Event approved but not scheduled.')
     }
 
     // Remove from pending list
