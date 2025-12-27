@@ -109,11 +109,16 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { account, sinceHours = 48 } = body
+    const { account, sinceHours = 48, profile_id } = body
 
     if (!account) {
       steps = updateStep(steps, 'Validate input', 'error', 'Missing account')
       return NextResponse.json({ error: 'Missing account', steps, logs }, { status: 400 })
+    }
+
+    if (!profile_id) {
+      steps = updateStep(steps, 'Validate input', 'error', 'Missing profile_id')
+      return NextResponse.json({ error: 'Missing profile_id', steps, logs }, { status: 400 })
     }
 
     steps = updateStep(steps, 'Validate input', 'done')
@@ -264,7 +269,7 @@ export async function POST(request: NextRequest) {
     steps = updateStep(steps, 'Ingest', 'running', 'Sending to Supabase')
     log('Sending posts to /api/ingest')
 
-    const ingestResp = await fetch(`${baseUrl}/api/ingest`, {
+    const ingestResp = await fetch(`${baseUrl}/api/ingest?profile_id=${profile_id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(filteredAndRecent),

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RefreshCw } from 'lucide-react'
+import { useAuth } from '@/contexts/auth-context'
 
 interface HistoryItem {
   created_at: string
@@ -14,6 +15,7 @@ interface HistoryItem {
 }
 
 export default function ScrapePage() {
+  const { currentProfile } = useAuth()
   const [account, setAccount] = useState('')
   const [sinceHours, setSinceHours] = useState('48')
   const [loading, setLoading] = useState(false)
@@ -91,7 +93,11 @@ export default function ScrapePage() {
       const res = await fetch('/api/apify-trigger', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account: account.trim(), sinceHours: Number(sinceHours) || 48 }),
+        body: JSON.stringify({ 
+          account: account.trim(), 
+          sinceHours: Number(sinceHours) || 48,
+          profile_id: currentProfile?.id,
+        }),
       })
       const data = await res.json()
       setResult(data)
