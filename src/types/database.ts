@@ -30,6 +30,7 @@ export interface EventDiscovery {
   scheduled_for: string | null
   posted_at: string | null
   meta_post_id: string | null
+  socialbu_post_id: number | null
   socialbu_account_ids: number[] | null
   engagement_likes: number | null
   engagement_comments: number | null

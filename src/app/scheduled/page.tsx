@@ -2,23 +2,75 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
-import { format } from 'date-fns'
-import { Calendar, Clock, Trash2 } from 'lucide-react'
+import { format, setHours, setMinutes } from 'date-fns'
+import { Calendar as CalendarIcon, Clock, Trash2, Send, Pencil } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { cn } from '@/lib/utils'
 import type { EventDiscovery } from '@/types/database'
 import { useProfileFetch } from '@/hooks/use-profile-fetch'
 
+function formatTo12h(input: string): string {
+  const digits = input.replace(/\D/g, '')
+  if (digits.length === 0) return '12:00 PM'
+  
+  let hours: number
+  let minutes: number
+  
+  if (digits.length <= 2) {
+    hours = parseInt(digits, 10)
+    minutes = 0
+  } else if (digits.length === 3) {
+    hours = parseInt(digits.slice(0, 1), 10)
+    minutes = parseInt(digits.slice(1), 10)
+  } else {
+    hours = parseInt(digits.slice(0, 2), 10)
+    minutes = parseInt(digits.slice(2, 4), 10)
+  }
+  
+  hours = Math.min(Math.max(hours, 0), 23)
+  minutes = Math.min(Math.max(minutes, 0), 59)
+  
+  const meridiem = hours >= 12 ? 'PM' : 'AM'
+  let displayHours = hours % 12
+  if (displayHours === 0) displayHours = 12
+  
+  return `${displayHours}:${minutes.toString().padStart(2, '0')} ${meridiem}`
+}
+
+function parse12hTime(timeStr: string): { hours: number; minutes: number } {
+  const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i)
+  if (!match) return { hours: 12, minutes: 0 }
+  
+  let hours = parseInt(match[1], 10)
+  const minutes = parseInt(match[2], 10)
+  const meridiem = match[3].toUpperCase()
+  
+  if (meridiem === 'PM' && hours !== 12) hours += 12
+  if (meridiem === 'AM' && hours === 12) hours = 0
+  
+  return { hours, minutes }
+}
+
 export default function ScheduledPage() {
-  const { fetchWithProfile, profileId } = useProfileFetch()
+  const { fetchWithProfile, profileId, currentProfile } = useProfileFetch()
   const [events, setEvents] = useState<EventDiscovery[]>([])
   const [loading, setLoading] = useState(true)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editDate, setEditDate] = useState<Date | undefined>()
+  const [editTime, setEditTime] = useState('12:00 PM')
+  const [editTimeRaw, setEditTimeRaw] = useState('')
+  const [calendarOpen, setCalendarOpen] = useState(false)
+  const [sendingId, setSendingId] = useState<string | null>(null)
 
   const fetchEvents = useCallback(async () => {
     if (!profileId) return
     try {
-      // Fetch both scheduled and approved events (approved = scheduled but not yet sent to SocialBu)
+      // Fetch both scheduled and approved events
       const [scheduledRes, approvedRes] = await Promise.all([
         fetchWithProfile('/api/events?status=scheduled'),
         fetchWithProfile('/api/events?status=approved'),
@@ -61,6 +113,96 @@ export default function ScheduledPage() {
     }
   }
 
+  const startEditing = (event: EventDiscovery) => {
+    setEditingId(event.id)
+    if (event.scheduled_for) {
+      setEditDate(new Date(event.scheduled_for))
+      setEditTime(format(new Date(event.scheduled_for), 'h:mm a'))
+    } else {
+      setEditDate(new Date())
+      setEditTime('12:00 PM')
+    }
+  }
+
+  const cancelEditing = () => {
+    setEditingId(null)
+    setEditDate(undefined)
+    setEditTime('12:00 PM')
+    setEditTimeRaw('')
+  }
+
+  const handleTimeBlur = () => {
+    if (editTimeRaw.trim()) {
+      setEditTime(formatTo12h(editTimeRaw))
+    }
+    setEditTimeRaw('')
+  }
+
+  const saveReschedule = async (id: string) => {
+    if (!editDate) return
+
+    const { hours, minutes } = parse12hTime(editTime)
+    const scheduledDateTime = setMinutes(setHours(editDate, hours), minutes)
+
+    const res = await fetch('/api/events', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id,
+        updates: { scheduled_for: scheduledDateTime.toISOString() },
+      }),
+    })
+
+    if (res.ok) {
+      setEvents((prev) =>
+        prev.map((e) =>
+          e.id === id ? { ...e, scheduled_for: scheduledDateTime.toISOString() } : e
+        ).sort((a, b) => 
+          new Date(a.scheduled_for || 0).getTime() - new Date(b.scheduled_for || 0).getTime()
+        )
+      )
+      cancelEditing()
+    }
+  }
+
+  const sendToSocialBu = async (event: EventDiscovery) => {
+    if (!currentProfile?.socialbu_account_id) {
+      alert('No SocialBu account linked to this profile')
+      return
+    }
+
+    setSendingId(event.id)
+    try {
+      const res = await fetch('/api/socialbu-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          eventId: event.id,
+          accountIds: [currentProfile.socialbu_account_id],
+        }),
+      })
+
+      const data = await res.json()
+      
+      if (data.success) {
+        // Update local state to show it's now scheduled
+        setEvents((prev) =>
+          prev.map((e) =>
+            e.id === event.id ? { ...e, status: 'scheduled' as const, socialbu_post_id: data.post_id } : e
+          )
+        )
+        alert('Successfully sent to SocialBu!')
+      } else {
+        alert(`Failed to send to SocialBu: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('Failed to send to SocialBu:', error)
+      alert('Failed to send to SocialBu')
+    } finally {
+      setSendingId(null)
+    }
+  }
+
   if (loading) {
     return (
       <div className="p-8">
@@ -81,7 +223,7 @@ export default function ScheduledPage() {
     <div className="p-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold tracking-tight mb-2 flex items-center gap-3">
-          <Calendar className="h-8 w-8 text-violet-500" />
+          <CalendarIcon className="h-8 w-8 text-violet-500" />
           Scheduled Posts
         </h1>
         <p className="text-zinc-400">
@@ -92,7 +234,7 @@ export default function ScheduledPage() {
       {events.length === 0 ? (
         <div className="text-center py-16">
           <div className="mx-auto w-16 h-16 rounded-full bg-zinc-900 flex items-center justify-center mb-4">
-            <Calendar className="h-8 w-8 text-zinc-600" />
+            <CalendarIcon className="h-8 w-8 text-zinc-600" />
           </div>
           <h3 className="text-lg font-medium text-zinc-300 mb-2">No scheduled posts</h3>
           <p className="text-zinc-500">Approve pending posts to add them to the queue.</p>
@@ -122,34 +264,125 @@ export default function ScheduledPage() {
                     {event.post_type === 'carousel' && (
                       <Badge variant="secondary" className="text-xs">Carousel</Badge>
                     )}
+                    {event.status === 'approved' && !event.socialbu_post_id && (
+                      <Badge variant="outline" className="text-xs text-amber-400 border-amber-400/50">
+                        Not sent to SocialBu
+                      </Badge>
+                    )}
+                    {event.socialbu_post_id && (
+                      <Badge variant="outline" className="text-xs text-green-400 border-green-400/50">
+                        In SocialBu
+                      </Badge>
+                    )}
                   </div>
                   <p className="text-sm text-zinc-500 truncate">
                     {event.final_caption?.slice(0, 80)}...
                   </p>
                 </div>
 
-                {/* Schedule time */}
-                <div className="text-right flex-shrink-0">
-                  <div className="flex items-center gap-1.5 text-violet-400 mb-0.5">
-                    <Clock className="h-3.5 w-3.5" />
-                    <span className="text-sm font-medium">
-                      {event.scheduled_for ? format(new Date(event.scheduled_for), 'MMM d') : 'Not set'}
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-600">
-                    {event.scheduled_for ? format(new Date(event.scheduled_for), 'h:mm a') : ''}
-                  </p>
-                </div>
+                {/* Schedule time / Edit */}
+                {editingId === event.id ? (
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="w-[130px] justify-start text-left bg-zinc-800 border-zinc-700"
+                        >
+                          <CalendarIcon className="mr-2 h-3.5 w-3.5" />
+                          {editDate ? format(editDate, 'MMM d') : 'Date'}
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0 bg-zinc-950 border border-zinc-800" align="end">
+                        <Calendar
+                          mode="single"
+                          selected={editDate}
+                          onSelect={(date) => {
+                            setEditDate(date)
+                            setCalendarOpen(false)
+                          }}
+                          initialFocus
+                          disabled={(date) => {
+                            const today = new Date()
+                            today.setHours(0, 0, 0, 0)
+                            return date < today
+                          }}
+                        />
+                      </PopoverContent>
+                    </Popover>
 
-                {/* Unschedule */}
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={() => handleUnschedule(event.id)}
-                  className="text-zinc-500 hover:text-red-400"
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                    <Input
+                      type="text"
+                      value={editTimeRaw || editTime}
+                      onChange={(e) => setEditTimeRaw(e.target.value)}
+                      onBlur={handleTimeBlur}
+                      onFocus={() => setEditTimeRaw('')}
+                      placeholder="1430"
+                      className="w-[90px] bg-zinc-800 border-zinc-700 h-8 text-sm"
+                    />
+
+                    <Button size="sm" onClick={() => saveReschedule(event.id)} className="bg-violet-600 hover:bg-violet-500">
+                      Save
+                    </Button>
+                    <Button size="sm" variant="ghost" onClick={cancelEditing}>
+                      Cancel
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="text-right flex-shrink-0">
+                    <div className="flex items-center gap-1.5 text-violet-400 mb-0.5">
+                      <Clock className="h-3.5 w-3.5" />
+                      <span className="text-sm font-medium">
+                        {event.scheduled_for ? format(new Date(event.scheduled_for), 'MMM d') : 'Not set'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-zinc-600">
+                      {event.scheduled_for ? format(new Date(event.scheduled_for), 'h:mm a') : ''}
+                    </p>
+                  </div>
+                )}
+
+                {/* Actions */}
+                {editingId !== event.id && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {/* Send to SocialBu button (only if not already sent) */}
+                    {!event.socialbu_post_id && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => sendToSocialBu(event)}
+                        disabled={sendingId === event.id}
+                        className="text-violet-400 hover:text-violet-300"
+                        title="Send to SocialBu"
+                      >
+                        <Send className={cn("h-4 w-4", sendingId === event.id && "animate-pulse")} />
+                      </Button>
+                    )}
+
+                    {/* Reschedule */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => startEditing(event)}
+                      className="text-zinc-400 hover:text-white"
+                      title="Reschedule"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+
+                    {/* Unschedule */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleUnschedule(event.id)}
+                      className="text-zinc-500 hover:text-red-400"
+                      title="Move back to Pending"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </div>
+                )}
               </div>
             </Card>
           ))}
@@ -158,4 +391,3 @@ export default function ScheduledPage() {
     </div>
   )
 }
-

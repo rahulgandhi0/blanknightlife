@@ -292,7 +292,12 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
                   setCalendarOpen(false)
                 }}
                 initialFocus
-                disabled={(date) => date < new Date()}
+                disabled={(date) => {
+                  // Allow today and future dates
+                  const today = new Date()
+                  today.setHours(0, 0, 0, 0)
+                  return date < today
+                }}
               />
             </PopoverContent>
           </Popover>
