@@ -18,10 +18,20 @@ export default function ScheduledPage() {
   const fetchEvents = useCallback(async () => {
     if (!profileId) return
     try {
-      const res = await fetchWithProfile('/api/events?status=scheduled')
-      const data = await res.json()
+      // Fetch both scheduled and approved events (approved = scheduled but not yet sent to SocialBu)
+      const [scheduledRes, approvedRes] = await Promise.all([
+        fetchWithProfile('/api/events?status=scheduled'),
+        fetchWithProfile('/api/events?status=approved'),
+      ])
+      const [scheduledData, approvedData] = await Promise.all([
+        scheduledRes.json(),
+        approvedRes.json(),
+      ])
+      
+      const allEvents = [...(scheduledData.events || []), ...(approvedData.events || [])]
+      
       // Sort by scheduled_for date
-      const sorted = (data.events || []).sort((a: EventDiscovery, b: EventDiscovery) => {
+      const sorted = allEvents.sort((a: EventDiscovery, b: EventDiscovery) => {
         return new Date(a.scheduled_for || 0).getTime() - new Date(b.scheduled_for || 0).getTime()
       })
       setEvents(sorted)

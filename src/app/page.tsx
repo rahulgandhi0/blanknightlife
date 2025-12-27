@@ -14,16 +14,18 @@ interface Stats {
 }
 
 async function getStats(fetchWithProfile: (url: string) => Promise<Response>): Promise<Stats> {
-  const [pending, scheduled, posted, archived] = await Promise.all([
+  const [pending, scheduled, approved, posted, archived] = await Promise.all([
     fetchWithProfile('/api/events?status=pending').then(r => r.json()),
     fetchWithProfile('/api/events?status=scheduled').then(r => r.json()),
+    fetchWithProfile('/api/events?status=approved').then(r => r.json()),
     fetchWithProfile('/api/events?status=posted').then(r => r.json()),
     fetchWithProfile('/api/events?status=archived').then(r => r.json()),
   ])
 
   return {
     pending: pending.events?.length || 0,
-    scheduled: scheduled.events?.length || 0,
+    // Count both scheduled and approved (approved = scheduled but not yet sent to SocialBu)
+    scheduled: (scheduled.events?.length || 0) + (approved.events?.length || 0),
     posted: posted.events?.length || 0,
     archived: archived.events?.length || 0,
   }
