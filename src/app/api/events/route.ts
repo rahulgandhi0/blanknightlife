@@ -12,13 +12,6 @@ export async function GET(request: NextRequest) {
 
   const supabase = await createClient()
 
-  // Get current user
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   let query = supabase
     .from('event_discovery')
     .select('*')
@@ -48,13 +41,6 @@ export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createClient()
 
-    // Get current user
-    const { data: { user }, error: authError } = await supabase.auth.getUser()
-    
-    if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const body = await request.json()
     const { id, updates } = body as { 
       id: string
@@ -68,9 +54,9 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    const { data, error } = await supabase
-      .from('event_discovery')
-      .update(updates as never)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const { data, error } = await (supabase.from('event_discovery') as any)
+      .update(updates)
       .eq('id', id)
       .select()
       .single()
@@ -80,7 +66,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     return NextResponse.json({ event: data })
-  } catch (error) {
+  } catch {
     return NextResponse.json(
       { error: 'Invalid request body' },
       { status: 400 }
@@ -92,13 +78,6 @@ export async function PATCH(request: NextRequest) {
 export async function DELETE(request: NextRequest) {
   const supabase = await createClient()
 
-  // Get current user
-  const { data: { user }, error: authError } = await supabase.auth.getUser()
-  
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  }
-
   const searchParams = request.nextUrl.searchParams
   const id = searchParams.get('id')
 
@@ -106,8 +85,8 @@ export async function DELETE(request: NextRequest) {
     return NextResponse.json({ error: 'Missing id' }, { status: 400 })
   }
 
-  const { error } = await supabase
-    .from('event_discovery')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from('event_discovery') as any)
     .delete()
     .eq('id', id)
 
@@ -117,4 +96,3 @@ export async function DELETE(request: NextRequest) {
 
   return NextResponse.json({ success: true })
 }
-

@@ -58,8 +58,7 @@ async function uploadMediaToStorage(
 async function processPost(
   supabase: ReturnType<typeof createServiceClient>,
   post: ApifyInstagramPost,
-  profileId: string,
-  userId: string
+  profileId: string
 ): Promise<{ success: boolean; reason?: string }> {
   const igPostId = post.id || post.shortCode
 
@@ -86,8 +85,8 @@ async function processPost(
   }
 
   // Check if already exists in database
-  const { data: existing } = await supabase
-    .from('event_discovery')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { data: existing } = await (supabase.from('event_discovery') as any)
     .select('id')
     .eq('ig_post_id', igPostId)
     .single()
@@ -179,20 +178,20 @@ async function processPost(
   }
 
   // Insert into database - NO AI generation yet (saves credits, user triggers manually)
-  const { error } = await supabase.from('event_discovery').insert({
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { error } = await (supabase.from('event_discovery') as any).insert({
     status: 'pending',
     source_account: post.ownerUsername,
     post_type: postType,
     original_caption: caption,
-    ai_generated_caption: null, // Generated on-demand by user
-    final_caption: null, // User will edit after AI generation
+    ai_generated_caption: null,
+    final_caption: null,
     media_urls: uploadedUrls,
     ig_post_id: igPostId,
     is_pinned: post.isPinned || false,
     posted_at_source: postedAt,
     profile_id: profileId,
-    user_id: userId,
-  } as never)
+  })
 
   if (error) {
     console.error('Database insert error:', JSON.stringify(error, null, 2))
@@ -212,21 +211,20 @@ async function fetchApifyDataset(datasetId: string): Promise<ApifyInstagramPost[
   return response.json()
 }
 
-// POST /api/ingest?profile_id=xxx&user_id=xxx
+// POST /api/ingest?profile_id=xxx
 // Receives posts directly OR Apify webhook payload
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const supabase = createServiceClient()
 
-    // Get profile_id and user_id from query params or body
+    // Get profile_id from query params or body
     const searchParams = request.nextUrl.searchParams
     const profileId = searchParams.get('profile_id') || body.profile_id
-    const userId = searchParams.get('user_id') || body.user_id
 
-    if (!profileId || !userId) {
+    if (!profileId) {
       return NextResponse.json(
-        { error: 'Missing profile_id and user_id. Required for multi-tenant support.' },
+        { error: 'Missing profile_id. Required for multi-tenant support.' },
         { status: 400 }
       )
     }
@@ -265,7 +263,7 @@ export async function POST(request: NextRequest) {
     }
 
     for (const post of posts) {
-      const { success, reason } = await processPost(supabase, post, profileId, userId)
+      const { success, reason } = await processPost(supabase, post, profileId)
       
       if (success) {
         results.processed++
@@ -301,4 +299,3 @@ export async function GET() {
     description: 'Send array of Apify Instagram posts to ingest',
   })
 }
-
