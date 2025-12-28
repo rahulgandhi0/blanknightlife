@@ -6,26 +6,41 @@ import { Plus, Clock, Trash2, Play, Pause, RefreshCw, Pencil, Check, X } from 'l
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/auth-context'
 import type { ScrapeAutomation } from '@/types/database'
 
-const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAYS_OF_WEEK = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+const DAYS_FULL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
-// PST is UTC-8, PDT is UTC-7. Using fixed -8 offset for simplicity.
+// PST offset
 const PST_OFFSET = -8
 
 function pstToUtc(hour: number): number {
-  // Convert PST hour to UTC hour
   return (hour - PST_OFFSET + 24) % 24
 }
 
 function utcToPst(hour: number): number {
-  // Convert UTC hour to PST hour
   return (hour + PST_OFFSET + 24) % 24
+}
+
+// Convert 24h to 12h format
+function to12Hour(hour24: number): { hour: number; ampm: 'AM' | 'PM' } {
+  const ampm = hour24 >= 12 ? 'PM' : 'AM'
+  let hour = hour24 % 12
+  if (hour === 0) hour = 12
+  return { hour, ampm }
+}
+
+// Convert 12h to 24h format
+function to24Hour(hour12: number, ampm: 'AM' | 'PM'): number {
+  if (ampm === 'AM') {
+    return hour12 === 12 ? 0 : hour12
+  } else {
+    return hour12 === 12 ? 12 : hour12 + 12
+  }
 }
 
 export default function AutomationsPage() {
@@ -35,14 +50,15 @@ export default function AutomationsPage() {
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [runningId, setRunningId] = useState<string | null>(null)
-  const [formData, setFormData] = useState({
-    account_handle: '@',
-    days_back: 3,
-    frequency: 'daily' as 'hourly' | 'daily' | 'weekly',
-    run_at_hour_pst: 9, // Store in PST for UI
-    run_at_minute: 0,
-    run_on_days: [0, 1, 2, 3, 4, 5, 6] as number[],
-  })
+  
+  // Form state
+  const [account, setAccount] = useState('')
+  const [daysBack, setDaysBack] = useState('3')
+  const [frequency, setFrequency] = useState<'hourly' | 'daily' | 'weekly'>('daily')
+  const [hour, setHour] = useState('9')
+  const [minute, setMinute] = useState('00')
+  const [ampm, setAmpm] = useState<'AM' | 'PM'>('AM')
+  const [runOnDays, setRunOnDays] = useState([0, 1, 2, 3, 4, 5, 6])
 
   const fetchAutomations = useCallback(async () => {
     if (!currentProfile?.id) return
@@ -63,51 +79,40 @@ export default function AutomationsPage() {
   }, [fetchAutomations])
 
   const resetForm = () => {
-    setFormData({
-      account_handle: '@',
-      days_back: 3,
-      frequency: 'daily',
-      run_at_hour_pst: 9,
-      run_at_minute: 0,
-      run_on_days: [0, 1, 2, 3, 4, 5, 6],
-    })
+    setAccount('')
+    setDaysBack('3')
+    setFrequency('daily')
+    setHour('9')
+    setMinute('00')
+    setAmpm('AM')
+    setRunOnDays([0, 1, 2, 3, 4, 5, 6])
     setShowForm(false)
     setEditingId(null)
   }
 
-  // Handle @ prefix in username input
-  const handleUsernameChange = (value: string) => {
-    // Always ensure @ prefix
-    if (!value.startsWith('@')) {
-      value = '@' + value.replace(/@/g, '')
-    }
-    setFormData(prev => ({ ...prev, account_handle: value }))
-  }
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!currentProfile?.id) return
+    if (!currentProfile?.id || !account.trim()) return
 
-    // Convert PST to UTC for storage
+    const hour24 = to24Hour(parseInt(hour) || 9, ampm)
+    
     const payload = {
-      account_handle: formData.account_handle,
-      days_back: formData.days_back,
-      frequency: formData.frequency,
-      run_at_hour: pstToUtc(formData.run_at_hour_pst), // Convert to UTC
-      run_at_minute: formData.run_at_minute,
-      run_on_days: formData.run_on_days,
+      account_handle: account.trim(),
+      days_back: parseInt(daysBack) || 3,
+      frequency,
+      run_at_hour: pstToUtc(hour24),
+      run_at_minute: parseInt(minute) || 0,
+      run_on_days: runOnDays,
     }
 
     try {
       if (editingId) {
-        // Update existing
         await fetch('/api/automations', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ id: editingId, updates: payload }),
         })
       } else {
-        // Create new
         await fetch('/api/automations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -122,14 +127,16 @@ export default function AutomationsPage() {
   }
 
   const startEditing = (automation: ScrapeAutomation) => {
-    setFormData({
-      account_handle: '@' + automation.account_handle.replace(/^@/, ''),
-      days_back: automation.days_back,
-      frequency: automation.frequency,
-      run_at_hour_pst: utcToPst(automation.run_at_hour), // Convert from UTC to PST
-      run_at_minute: automation.run_at_minute,
-      run_on_days: automation.run_on_days,
-    })
+    const pstHour = utcToPst(automation.run_at_hour)
+    const { hour: h12, ampm: ap } = to12Hour(pstHour)
+    
+    setAccount(automation.account_handle)
+    setDaysBack(String(automation.days_back))
+    setFrequency(automation.frequency)
+    setHour(String(h12))
+    setMinute(String(automation.run_at_minute).padStart(2, '0'))
+    setAmpm(ap)
+    setRunOnDays(automation.run_on_days)
     setEditingId(automation.id)
     setShowForm(true)
   }
@@ -165,19 +172,15 @@ export default function AutomationsPage() {
   }
 
   const toggleDay = (day: number) => {
-    setFormData(prev => ({
-      ...prev,
-      run_on_days: prev.run_on_days.includes(day)
-        ? prev.run_on_days.filter(d => d !== day)
-        : [...prev.run_on_days, day].sort((a, b) => a - b),
-    }))
+    setRunOnDays(prev => 
+      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort((a, b) => a - b)
+    )
   }
 
-  const formatTime = (hour: number, minute: number) => {
-    const h = hour % 12 || 12
-    const m = minute.toString().padStart(2, '0')
-    const ampm = hour >= 12 ? 'PM' : 'AM'
-    return `${h}:${m} ${ampm}`
+  const formatTime = (hourUtc: number, min: number) => {
+    const pstHour = utcToPst(hourUtc)
+    const { hour: h, ampm: ap } = to12Hour(pstHour)
+    return `${h}:${String(min).padStart(2, '0')} ${ap}`
   }
 
   if (loading) {
@@ -185,10 +188,9 @@ export default function AutomationsPage() {
       <div className="p-8">
         <div className="animate-pulse">
           <div className="h-8 w-48 bg-zinc-800 rounded mb-4" />
-          <div className="h-4 w-96 bg-zinc-800 rounded mb-8" />
-          <div className="space-y-4">
+          <div className="space-y-3">
             {[1, 2].map((i) => (
-              <div key={i} className="h-24 bg-zinc-900 rounded-lg" />
+              <div key={i} className="h-16 bg-zinc-900 rounded-lg" />
             ))}
           </div>
         </div>
@@ -197,68 +199,53 @@ export default function AutomationsPage() {
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-6 space-y-4">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Automations</h1>
-          <p className="text-sm text-zinc-500 mt-1">Scheduled scraping tasks for {currentProfile?.name}</p>
+          <p className="text-sm text-zinc-500">Scheduled scrapes for {currentProfile?.name}</p>
         </div>
-        <Button
-          onClick={() => { resetForm(); setShowForm(true) }}
-          className="bg-violet-600 hover:bg-violet-500"
-        >
-          <Plus className="h-4 w-4 mr-2" />
-          New Automation
-        </Button>
+        {!showForm && (
+          <Button onClick={() => setShowForm(true)} size="sm" className="bg-violet-600 hover:bg-violet-500">
+            <Plus className="h-4 w-4 mr-1" />
+            New
+          </Button>
+        )}
       </div>
 
-      {/* Form */}
+      {/* Compact Form */}
       {showForm && (
-        <Card className="bg-zinc-950 border border-zinc-800 p-4">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="font-medium text-zinc-200">
-                {editingId ? 'Edit Automation' : 'New Automation'}
-              </h3>
-              <Button type="button" variant="ghost" size="sm" onClick={resetForm}>
-                <X className="h-4 w-4" />
-              </Button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Instagram Account</Label>
+        <Card className="bg-zinc-950 border border-zinc-800 p-3">
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {/* Row 1: Account, Days, Frequency */}
+            <div className="flex items-center gap-2">
+              <div className="flex-1 max-w-[180px]">
                 <Input
-                  value={formData.account_handle}
-                  onChange={(e) => handleUsernameChange(e.target.value)}
-                  placeholder="@username"
-                  className="bg-zinc-900 border-zinc-800"
+                  value={account}
+                  onChange={(e) => setAccount(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  placeholder="username"
+                  className="bg-zinc-900 border-zinc-800 h-8 text-sm"
                   required
                 />
               </div>
-
-              <div className="space-y-2">
-                <Label>Days Back</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={30}
-                  value={formData.days_back}
-                  onChange={(e) => setFormData(prev => ({ ...prev, days_back: parseInt(e.target.value) || 3 }))}
-                  className="bg-zinc-900 border-zinc-800"
-                  required
-                />
+              
+              <div className="w-16">
+                <Select value={daysBack} onValueChange={setDaysBack}>
+                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-8 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-zinc-800">
+                    {[1, 2, 3, 5, 7, 14, 30].map(d => (
+                      <SelectItem key={d} value={String(d)}>{d}d</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </div>
 
-            <div className="grid grid-cols-3 gap-4">
-              <div className="space-y-2">
-                <Label>Frequency</Label>
-                <Select
-                  value={formData.frequency}
-                  onValueChange={(v) => setFormData(prev => ({ ...prev, frequency: v as 'hourly' | 'daily' | 'weekly' }))}
-                >
-                  <SelectTrigger className="bg-zinc-900 border-zinc-800">
+              <div className="w-24">
+                <Select value={frequency} onValueChange={(v) => setFrequency(v as 'hourly' | 'daily' | 'weekly')}>
+                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-8 text-sm">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-900 border-zinc-800">
@@ -269,200 +256,182 @@ export default function AutomationsPage() {
                 </Select>
               </div>
 
-              <div className="space-y-2">
-                <Label>Run at (Hour, PST)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={23}
-                  value={formData.run_at_hour_pst}
-                  onChange={(e) => setFormData(prev => ({ ...prev, run_at_hour_pst: parseInt(e.target.value) || 0 }))}
-                  className="bg-zinc-900 border-zinc-800"
-                />
+              {/* Time picker */}
+              <div className="flex items-center gap-1">
+                <Select value={hour} onValueChange={setHour}>
+                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-8 w-14 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-zinc-800 max-h-48">
+                    {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
+                      <SelectItem key={h} value={String(h)}>{h}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <span className="text-zinc-500">:</span>
+                <Select value={minute} onValueChange={setMinute}>
+                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-8 w-14 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-zinc-800">
+                    {['00', '15', '30', '45'].map(m => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Select value={ampm} onValueChange={(v) => setAmpm(v as 'AM' | 'PM')}>
+                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-8 w-16 text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-zinc-900 border-zinc-800">
+                    <SelectItem value="AM">AM</SelectItem>
+                    <SelectItem value="PM">PM</SelectItem>
+                  </SelectContent>
+                </Select>
+                <span className="text-xs text-zinc-500 ml-1">PST</span>
               </div>
 
-              <div className="space-y-2">
-                <Label>Minute</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  max={59}
-                  value={formData.run_at_minute}
-                  onChange={(e) => setFormData(prev => ({ ...prev, run_at_minute: parseInt(e.target.value) || 0 }))}
-                  className="bg-zinc-900 border-zinc-800"
-                />
-              </div>
+              <Button type="submit" size="sm" className="bg-violet-600 hover:bg-violet-500 h-8 px-3">
+                <Check className="h-3.5 w-3.5" />
+              </Button>
+              <Button type="button" size="sm" variant="ghost" onClick={resetForm} className="h-8 px-2">
+                <X className="h-3.5 w-3.5" />
+              </Button>
             </div>
 
-            {formData.frequency === 'weekly' && (
-              <div className="space-y-2">
-                <Label>Run on Days</Label>
-                <div className="flex gap-2">
-                  {DAYS_OF_WEEK.map((day, idx) => (
-                    <button
-                      key={day}
-                      type="button"
-                      onClick={() => toggleDay(idx)}
-                      className={cn(
-                        "px-3 py-1 rounded text-sm transition-colors",
-                        formData.run_on_days.includes(idx)
-                          ? "bg-violet-600 text-white"
-                          : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
-                      )}
-                    >
-                      {day}
-                    </button>
-                  ))}
-                </div>
+            {/* Row 2: Days of week (only for weekly) */}
+            {frequency === 'weekly' && (
+              <div className="flex items-center gap-1">
+                <span className="text-xs text-zinc-500 mr-2">Days:</span>
+                {DAYS_OF_WEEK.map((day, idx) => (
+                  <button
+                    key={idx}
+                    type="button"
+                    onClick={() => toggleDay(idx)}
+                    className={cn(
+                      "w-7 h-7 rounded text-xs font-medium transition-colors",
+                      runOnDays.includes(idx)
+                        ? "bg-violet-600 text-white"
+                        : "bg-zinc-800 text-zinc-500 hover:bg-zinc-700"
+                    )}
+                  >
+                    {day}
+                  </button>
+                ))}
               </div>
             )}
-
-            <div className="flex justify-end gap-2 pt-2">
-              <Button type="button" variant="outline" onClick={resetForm} className="border-zinc-800">
-                Cancel
-              </Button>
-              <Button type="submit" className="bg-violet-600 hover:bg-violet-500">
-                <Check className="h-4 w-4 mr-2" />
-                {editingId ? 'Save Changes' : 'Create Automation'}
-              </Button>
-            </div>
           </form>
         </Card>
       )}
 
       {/* Automations List */}
       {automations.length === 0 && !showForm ? (
-        <Card className="bg-zinc-950 border border-zinc-800 p-12 text-center">
-          <Clock className="h-10 w-10 text-zinc-600 mx-auto mb-3" />
-          <h3 className="text-lg font-medium text-zinc-300 mb-2">No automations yet</h3>
-          <p className="text-zinc-500 mb-4">Create an automation to scrape accounts on a schedule</p>
-          <Button onClick={() => setShowForm(true)} className="bg-violet-600 hover:bg-violet-500">
-            <Plus className="h-4 w-4 mr-2" />
-            Create First Automation
+        <Card className="bg-zinc-950 border border-zinc-800 p-8 text-center">
+          <Clock className="h-8 w-8 text-zinc-600 mx-auto mb-2" />
+          <p className="text-zinc-400 mb-3">No automations yet</p>
+          <Button onClick={() => setShowForm(true)} size="sm" className="bg-violet-600 hover:bg-violet-500">
+            <Plus className="h-4 w-4 mr-1" />
+            Create Automation
           </Button>
         </Card>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-2">
           {automations.map((automation) => (
             <Card 
               key={automation.id} 
               className={cn(
-                "bg-zinc-950 border border-zinc-800 p-4",
+                "bg-zinc-950 border border-zinc-800 p-3",
                 !automation.is_active && "opacity-50"
               )}
             >
-              <div className="flex items-center gap-4">
-                {/* Icon */}
+              <div className="flex items-center gap-3">
+                {/* Status dot */}
                 <div className={cn(
-                  "w-10 h-10 rounded-full flex items-center justify-center",
-                  automation.is_active ? "bg-violet-600/20 text-violet-400" : "bg-zinc-800 text-zinc-500"
-                )}>
-                  <Clock className="h-5 w-5" />
-                </div>
+                  "w-2 h-2 rounded-full flex-shrink-0",
+                  automation.is_active ? "bg-green-500" : "bg-zinc-600"
+                )} />
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
+                  <div className="flex items-center gap-2">
                     <span className="font-medium text-zinc-200">@{automation.account_handle}</span>
-                    <Badge 
-                      variant="outline" 
-                      className={cn(
-                        "text-xs",
-                        automation.is_active 
-                          ? "border-green-400/50 text-green-400" 
-                          : "border-zinc-600 text-zinc-500"
-                      )}
-                    >
-                      {automation.is_active ? 'Active' : 'Paused'}
-                    </Badge>
-                    <Badge variant="outline" className="text-xs border-zinc-700 text-zinc-400 capitalize">
+                    <span className="text-xs text-zinc-500">{automation.days_back}d</span>
+                    <Badge variant="outline" className="text-[10px] border-zinc-700 text-zinc-500 capitalize px-1.5 py-0">
                       {automation.frequency}
                     </Badge>
-                    {automation.last_run_status && (
-                      <Badge 
-                        variant="outline" 
-                        className={cn(
-                          "text-xs",
-                          automation.last_run_status === 'success' 
-                            ? "border-green-400/50 text-green-400"
-                            : automation.last_run_status === 'running'
-                            ? "border-blue-400/50 text-blue-400"
-                            : "border-red-400/50 text-red-400"
-                        )}
-                      >
-                        {automation.last_run_status}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-zinc-500">
-                    <span>{automation.days_back} days back</span>
-                    <span>at {formatTime(utcToPst(automation.run_at_hour), automation.run_at_minute)} PST</span>
+                    <span className="text-xs text-zinc-500">
+                      {formatTime(automation.run_at_hour, automation.run_at_minute)}
+                    </span>
                     {automation.frequency === 'weekly' && (
-                      <span>
-                        {automation.run_on_days.map(d => DAYS_OF_WEEK[d]).join(', ')}
+                      <span className="text-xs text-zinc-600">
+                        {automation.run_on_days.map(d => DAYS_FULL[d].charAt(0)).join('')}
                       </span>
                     )}
-                    {automation.run_count > 0 && (
-                      <span>{automation.run_count} runs</span>
-                    )}
                   </div>
-                </div>
-
-                {/* Next run */}
-                <div className="text-right flex-shrink-0">
-                  {automation.next_run_at && automation.is_active && (
-                    <>
-                      <p className="text-xs text-zinc-600">Next run</p>
-                      <p className="text-sm text-zinc-400">
-                        {format(new Date(automation.next_run_at), 'MMM d, h:mm a')}
-                      </p>
-                    </>
-                  )}
                   {automation.last_run_at && (
-                    <p className="text-xs text-zinc-600 mt-1">
+                    <p className="text-[11px] text-zinc-600">
                       Last: {format(new Date(automation.last_run_at), 'MMM d, h:mm a')}
+                      {automation.last_run_status && (
+                        <span className={cn(
+                          "ml-2",
+                          automation.last_run_status === 'success' ? 'text-green-500' : 
+                          automation.last_run_status === 'failed' ? 'text-red-400' : 'text-blue-400'
+                        )}>
+                          • {automation.last_run_status}
+                        </span>
+                      )}
                     </p>
                   )}
                 </div>
 
+                {/* Next run */}
+                {automation.next_run_at && automation.is_active && (
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-[11px] text-zinc-600">Next</p>
+                    <p className="text-xs text-zinc-400">
+                      {format(new Date(automation.next_run_at), 'MMM d, h:mm a')}
+                    </p>
+                  </div>
+                )}
+
                 {/* Actions */}
-                <div className="flex items-center gap-1 flex-shrink-0">
+                <div className="flex items-center gap-0.5 flex-shrink-0">
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() => runNow(automation)}
                     disabled={runningId === automation.id}
-                    className="text-violet-400 hover:text-violet-300"
+                    className="h-7 w-7 p-0 text-violet-400 hover:text-violet-300"
                     title="Run Now"
                   >
-                    <RefreshCw className={cn("h-4 w-4", runningId === automation.id && "animate-spin")} />
+                    <RefreshCw className={cn("h-3.5 w-3.5", runningId === automation.id && "animate-spin")} />
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() => toggleActive(automation)}
-                    className="text-zinc-400 hover:text-white"
+                    className="h-7 w-7 p-0 text-zinc-500 hover:text-white"
                     title={automation.is_active ? 'Pause' : 'Resume'}
                   >
-                    {automation.is_active ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+                    {automation.is_active ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() => startEditing(automation)}
-                    className="text-zinc-400 hover:text-white"
+                    className="h-7 w-7 p-0 text-zinc-500 hover:text-white"
                     title="Edit"
                   >
-                    <Pencil className="h-4 w-4" />
+                    <Pencil className="h-3.5 w-3.5" />
                   </Button>
                   <Button
                     size="sm"
                     variant="ghost"
                     onClick={() => deleteAutomation(automation.id)}
-                    className="text-zinc-500 hover:text-red-400"
+                    className="h-7 w-7 p-0 text-zinc-600 hover:text-red-400"
                     title="Delete"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               </div>
@@ -470,8 +439,6 @@ export default function AutomationsPage() {
           ))}
         </div>
       )}
-
     </div>
   )
 }
-
