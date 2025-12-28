@@ -99,6 +99,140 @@ const normalizePost = (raw: any): ApifyInstagramPost => {
   }
 }
 
+// Handle single post scraping
+async function handleSinglePost(
+  request: NextRequest,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  body: any,
+  steps: Step[],
+  logs: string[],
+  log: (msg: string) => void
+) {
+  const { postUrl, shortcode, profile_id } = body
+
+  if (!profile_id) {
+    steps = updateStep(steps, 'Validate input', 'error', 'Missing profile_id')
+    return NextResponse.json({ error: 'Missing profile_id', steps, logs }, { status: 400 })
+  }
+
+  steps = updateStep(steps, 'Validate input', 'done')
+  log(`Single post mode: ${shortcode || postUrl}`)
+
+  const token = process.env.APIFY_API_TOKEN
+  if (!token) {
+    steps = updateStep(steps, 'Run Apify', 'error', 'APIFY_API_TOKEN missing')
+    return NextResponse.json({ error: 'APIFY_API_TOKEN missing', steps, logs }, { status: 500 })
+  }
+
+  // Get base URL for ingest
+  const origin = (() => {
+    try {
+      return new URL(request.url).origin
+    } catch {
+      return null
+    }
+  })()
+  const localPort = process.env.PORT || process.env.NEXT_PUBLIC_PORT || '3000'
+  const baseUrl =
+    origin ||
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${localPort}`)
+
+  steps = updateStep(steps, 'Run Apify', 'running', 'Fetching single post')
+
+  try {
+    // Use the Instagram Post Scraper for single posts
+    const actorId = 'apify~instagram-post-scraper'
+    const postUrlFinal = postUrl || `https://www.instagram.com/p/${shortcode}/`
+    
+    const input = {
+      directUrls: [postUrlFinal],
+      resultsLimit: 1,
+      proxy: { useApifyProxy: true },
+    }
+
+    log(`Calling Apify actor ${actorId}`)
+    
+    const resp = await fetch(`https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+
+    if (!resp.ok) {
+      const err = await resp.text()
+      steps = updateStep(steps, 'Run Apify', 'error', 'Apify request failed')
+      log(`Apify error: ${err}`)
+      return NextResponse.json({ error: 'Apify request failed', details: err, steps, logs }, { status: 500 })
+    }
+
+    const items = await resp.json()
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawPosts: any[] = Array.isArray(items) ? items : []
+    
+    log(`Apify returned ${rawPosts.length} items`)
+    steps = updateStep(steps, 'Run Apify', 'done', `Found ${rawPosts.length}`)
+
+    if (rawPosts.length === 0) {
+      steps = updateStep(steps, 'Filter results', 'done', 'No post found')
+      return NextResponse.json({
+        success: true,
+        found: 0,
+        message: 'No post found at that URL',
+        steps,
+        logs,
+      })
+    }
+
+    const normalized = rawPosts.map(normalizePost)
+    steps = updateStep(steps, 'Filter results', 'done', `1 post`)
+    
+    // Skip video check for single posts - let user decide
+    const filtered = normalized.filter(post => post.type !== 'Video')
+    
+    if (filtered.length === 0) {
+      return NextResponse.json({
+        success: true,
+        found: 0,
+        message: 'Post is a video (not supported)',
+        steps,
+        logs,
+      })
+    }
+
+    steps = updateStep(steps, 'Ingest', 'running', 'Sending to Supabase')
+    log('Sending post to /api/ingest')
+
+    const ingestResp = await fetch(`${baseUrl}/api/ingest?profile_id=${profile_id}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(filtered),
+    })
+
+    if (!ingestResp.ok) {
+      const err = await ingestResp.text()
+      steps = updateStep(steps, 'Ingest', 'error', 'Ingest failed')
+      log(`Ingest failed: ${err}`)
+      return NextResponse.json({ error: 'Ingest failed', details: err, steps, logs }, { status: 500 })
+    }
+
+    const ingestData = await ingestResp.json()
+    steps = updateStep(steps, 'Ingest', 'done', `Processed ${ingestData.processed || 0}`)
+
+    return NextResponse.json({
+      success: true,
+      found: 1,
+      ingestResult: ingestData,
+      steps,
+      logs,
+    })
+  } catch (error) {
+    steps = updateStep(steps, 'Run Apify', 'error', 'Unexpected error')
+    logs.push(`Error: ${String(error)}`)
+    return NextResponse.json({ error: 'Internal error', details: String(error), steps, logs }, { status: 500 })
+  }
+}
+
 export async function POST(request: NextRequest) {
   const logs: string[] = []
   let steps = stepList()
@@ -109,7 +243,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json()
-    const { account, sinceHours = 48, profile_id } = body
+    const { account, sinceHours = 48, profile_id, postUrl, shortcode, mode } = body
+
+    // Single post mode
+    if (mode === 'single' && (postUrl || shortcode)) {
+      return handleSinglePost(request, body, steps, logs, log)
+    }
 
     if (!account) {
       steps = updateStep(steps, 'Validate input', 'error', 'Missing account')
