@@ -30,13 +30,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Find the event with this SocialBu post ID
+    // Find the event with this SocialBu post ID (check both fields)
     const supabase = await createClient();
-    const { data: event, error: fetchError } = await supabase
+    
+    // Try meta_post_id first (string)
+    let { data: event, error: fetchError } = await supabase
       .from('event_discovery')
       .select('*')
-      .eq('meta_post_id', post_id)
+      .eq('meta_post_id', String(post_id))
       .single();
+
+    // If not found, try socialbu_post_id (number)
+    if (fetchError || !event) {
+      const numericId = typeof post_id === 'number' ? post_id : parseInt(post_id)
+      if (!isNaN(numericId)) {
+        const result = await supabase
+          .from('event_discovery')
+          .select('*')
+          .eq('socialbu_post_id', numericId)
+          .single()
+        event = result.data
+        fetchError = result.error
+      }
+    }
 
     if (fetchError || !event) {
       console.error('Event not found for SocialBu post:', post_id);

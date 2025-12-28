@@ -107,7 +107,8 @@ export async function POST(request: NextRequest) {
       .from('event_discovery')
       .update({
         status: 'scheduled',
-        meta_post_id: result.post_id, // Store SocialBu post ID
+        meta_post_id: String(result.post_id), // Store as string
+        socialbu_post_id: result.post_id ? (typeof result.post_id === 'number' ? result.post_id : parseInt(result.post_id)) : null,
         updated_at: new Date().toISOString(),
       })
       .eq('id', eventId);
