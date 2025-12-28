@@ -1,6 +1,8 @@
 export type EventStatus = 'pending' | 'approved' | 'scheduled' | 'posted' | 'archived' | 'discarded'
 export type PostType = 'image' | 'carousel'
 export type Platform = 'instagram' | 'tiktok' | 'twitter' | 'facebook' | 'linkedin' | 'youtube'
+export type AutomationFrequency = 'hourly' | 'daily' | 'weekly'
+export type AutomationRunStatus = 'success' | 'failed' | 'running'
 
 export interface Profile {
   id: string
@@ -48,6 +50,25 @@ export interface SocialAccount {
   username: string
   is_active: boolean
   is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface ScrapeAutomation {
+  id: string
+  profile_id: string
+  account_handle: string
+  days_back: number
+  frequency: AutomationFrequency
+  run_at_hour: number
+  run_at_minute: number
+  run_on_days: number[]
+  is_active: boolean
+  last_run_at: string | null
+  last_run_status: AutomationRunStatus | null
+  last_run_result: Record<string, unknown> | null
+  next_run_at: string | null
+  run_count: number
   created_at: string
   updated_at: string
 }
@@ -149,6 +170,39 @@ export interface Database {
           username?: string
           is_active?: boolean
           is_default?: boolean
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      scrape_automations: {
+        Row: ScrapeAutomation
+        Insert: {
+          profile_id: string
+          account_handle: string
+          days_back?: number
+          frequency?: AutomationFrequency
+          run_at_hour?: number
+          run_at_minute?: number
+          run_on_days?: number[]
+          is_active?: boolean
+          id?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          profile_id?: string
+          account_handle?: string
+          days_back?: number
+          frequency?: AutomationFrequency
+          run_at_hour?: number
+          run_at_minute?: number
+          run_on_days?: number[]
+          is_active?: boolean
+          last_run_at?: string | null
+          last_run_status?: AutomationRunStatus | null
+          last_run_result?: Record<string, unknown> | null
+          next_run_at?: string | null
+          run_count?: number
           updated_at?: string
         }
         Relationships: []
