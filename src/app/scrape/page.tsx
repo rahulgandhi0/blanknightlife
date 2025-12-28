@@ -7,6 +7,7 @@ import { Card } from '@/components/ui/card'
 import { Label } from '@/components/ui/label'
 import { RefreshCw, Link2, User } from 'lucide-react'
 import { useAuth } from '@/contexts/auth-context'
+import { cn } from '@/lib/utils'
 
 interface HistoryItem {
   created_at: string
@@ -16,31 +17,11 @@ interface HistoryItem {
 
 type ScrapeMode = 'profile' | 'post'
 
-function detectMode(input: string): ScrapeMode {
-  const trimmed = input.trim()
-  // Check if it's an Instagram URL
-  if (
-    trimmed.includes('instagram.com/p/') ||
-    trimmed.includes('instagram.com/reel/') ||
-    trimmed.includes('instagr.am/p/')
-  ) {
-    return 'post'
-  }
-  return 'profile'
-}
-
-function extractShortcode(url: string): string | null {
-  // Extract shortcode from Instagram URL
-  const match = url.match(/instagram\.com\/(?:p|reel)\/([A-Za-z0-9_-]+)/)
-  if (match) return match[1]
-  const match2 = url.match(/instagr\.am\/p\/([A-Za-z0-9_-]+)/)
-  if (match2) return match2[1]
-  return null
-}
-
 export default function ScrapePage() {
   const { currentProfile } = useAuth()
-  const [input, setInput] = useState('')
+  const [mode, setMode] = useState<ScrapeMode>('profile')
+  const [account, setAccount] = useState('')
+  const [postUrl, setPostUrl] = useState('')
   const [sinceDays, setSinceDays] = useState('3')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<{ runId?: string; error?: string; success?: boolean } | null>(null)
@@ -72,10 +53,8 @@ export default function ScrapePage() {
   const [liveLog, setLiveLog] = useState<string>('')
   const pollRef = useRef<NodeJS.Timeout | null>(null)
 
-  const mode = detectMode(input)
-
   const fetchHistory = async (handle: string) => {
-    if (!handle || mode === 'post') {
+    if (!handle) {
       setHistory(null)
       return
     }
@@ -96,14 +75,15 @@ export default function ScrapePage() {
   }
 
   useEffect(() => {
-    const handle = input.trim().replace(/^@/, '')
-    if (!handle || mode === 'post') {
+    if (mode !== 'profile') return
+    const handle = account.trim().replace(/^@/, '')
+    if (!handle) {
       setHistory(null)
       return
     }
     const t = setTimeout(() => fetchHistory(handle), 300)
     return () => clearTimeout(t)
-  }, [input, mode])
+  }, [account, mode])
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -111,6 +91,20 @@ export default function ScrapePage() {
       if (pollRef.current) clearInterval(pollRef.current)
     }
   }, [])
+
+  // Reset results when switching modes
+  useEffect(() => {
+    setResult(null)
+    setScrapeStatus(null)
+    setScrapeStats(null)
+    setLogs([])
+    setProgress([
+      { label: 'Validate input', state: 'idle' },
+      { label: 'Run Apify', state: 'idle' },
+      { label: 'Filter results', state: 'idle' },
+      { label: 'Ingest', state: 'idle' },
+    ])
+  }, [mode])
 
   const updateProgress = (stepLabel: string, state: 'idle' | 'active' | 'done' | 'error', helper?: string) => {
     setProgress(prev => prev.map(p => 
@@ -121,6 +115,14 @@ export default function ScrapePage() {
   const addLog = (msg: string) => {
     setLogs(prev => [...prev, msg])
     setLiveLog(msg)
+  }
+
+  const extractShortcode = (url: string): string | null => {
+    const match = url.match(/instagram\.com\/(?:p|reel)\/([A-Za-z0-9_-]+)/)
+    if (match) return match[1]
+    const match2 = url.match(/instagr\.am\/p\/([A-Za-z0-9_-]+)/)
+    if (match2) return match2[1]
+    return null
   }
 
   const submit = async (e: React.FormEvent) => {
@@ -138,28 +140,26 @@ export default function ScrapePage() {
       { label: 'Ingest', state: 'idle' },
     ])
 
-    const sinceHours = Math.round(Number(sinceDays) * 24) || 72
-
     try {
       if (mode === 'post') {
         // Single post scrape
-        const shortcode = extractShortcode(input)
+        const shortcode = extractShortcode(postUrl)
         if (!shortcode) {
           updateProgress('Validate input', 'error', 'Invalid Instagram URL')
-          setScrapeStatus('Invalid Instagram URL')
+          setScrapeStatus('Invalid Instagram URL - use format: instagram.com/p/ABC123/')
           setLoading(false)
           return
         }
 
         updateProgress('Validate input', 'done')
-        updateProgress('Run Apify', 'active', 'Fetching single post...')
+        updateProgress('Run Apify', 'active', 'Fetching post...')
         addLog(`Fetching post: ${shortcode}`)
 
         const res = await fetch('/api/apify-trigger', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            postUrl: input.trim(),
+            postUrl: postUrl.trim(),
             shortcode,
             profile_id: currentProfile?.id,
             mode: 'single',
@@ -168,26 +168,27 @@ export default function ScrapePage() {
         const data = await res.json()
         handleResponse(data)
       } else {
-        // Profile scrape with simulated progress
-        const account = input.trim().replace(/^@/, '')
+        // Profile scrape
+        const cleanAccount = account.trim().replace(/^@/, '')
+        const sinceHours = Math.round(Number(sinceDays) * 24) || 72
         
         updateProgress('Validate input', 'done')
-        updateProgress('Run Apify', 'active', `Scraping @${account}...`)
-        addLog(`Starting scrape for @${account}`)
+        updateProgress('Run Apify', 'active', `Scraping @${cleanAccount}...`)
+        addLog(`Starting scrape for @${cleanAccount}`)
         addLog(`Looking back ${sinceDays} days (${sinceHours} hours)`)
 
         // Start polling for visual feedback
         let dots = 0
         pollRef.current = setInterval(() => {
           dots = (dots + 1) % 4
-          setLiveLog(`Scraping @${account}${'.'.repeat(dots)}`)
+          setLiveLog(`Scraping @${cleanAccount}${'.'.repeat(dots)}`)
         }, 500)
 
         const res = await fetch('/api/apify-trigger', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ 
-            account,
+            account: cleanAccount,
             sinceHours,
             profile_id: currentProfile?.id,
           }),
@@ -204,7 +205,7 @@ export default function ScrapePage() {
         
         // Refresh history
         if (data.success) {
-          fetchHistory(account)
+          fetchHistory(cleanAccount)
         }
       }
     } catch (error) {
@@ -287,66 +288,103 @@ export default function ScrapePage() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-semibold">Scrape Now</h1>
-          <p className="text-sm text-zinc-500 mt-1">Scrape a profile or single post</p>
+          <p className="text-sm text-zinc-500 mt-1">Import content from Instagram</p>
         </div>
+      </div>
+
+      {/* Mode Tabs */}
+      <div className="flex gap-1 p-1 bg-zinc-900 rounded-lg w-fit">
+        <button
+          onClick={() => setMode('profile')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
+            mode === 'profile'
+              ? "bg-violet-600 text-white"
+              : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+          )}
+        >
+          <User className="h-4 w-4" />
+          Profile
+        </button>
+        <button
+          onClick={() => setMode('post')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium transition-all",
+            mode === 'post'
+              ? "bg-violet-600 text-white"
+              : "text-zinc-400 hover:text-white hover:bg-zinc-800"
+          )}
+        >
+          <Link2 className="h-4 w-4" />
+          Single Post
+        </button>
       </div>
 
       <Card className="bg-zinc-950 border border-zinc-800 p-4 space-y-4">
         <form className="space-y-4" onSubmit={submit}>
-          <div className="flex flex-col gap-1">
-            <Label className="text-sm text-zinc-300 flex items-center gap-2">
-              {mode === 'post' ? (
-                <>
-                  <Link2 className="h-4 w-4 text-violet-400" />
-                  Post URL
-                </>
-              ) : (
-                <>
-                  <User className="h-4 w-4 text-violet-400" />
-                  Account
-                </>
-              )}
-            </Label>
-            <Input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="@username or instagram.com/p/..."
-              className="bg-zinc-900 border-zinc-800"
-              required
-            />
-            <p className="text-xs text-zinc-500">
-              {mode === 'post' 
-                ? 'Detected: Single post URL' 
-                : 'Enter @username to scrape recent posts, or paste a post URL'}
-            </p>
-          </div>
+          {mode === 'profile' ? (
+            <>
+              <div className="flex flex-col gap-1">
+                <Label className="text-sm text-zinc-300">Instagram Username</Label>
+                <Input
+                  value={account}
+                  onChange={(e) => setAccount(e.target.value)}
+                  placeholder="@username or username"
+                  className="bg-zinc-900 border-zinc-800"
+                  required
+                />
+                <p className="text-xs text-zinc-500">Scrapes recent posts from this profile</p>
+              </div>
 
-          {mode === 'profile' && (
-            <div className="flex flex-col gap-1 w-40">
-              <Label className="text-sm text-zinc-300">Time range (days)</Label>
+              <div className="flex flex-col gap-1 w-40">
+                <Label className="text-sm text-zinc-300">Time range (days)</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={30}
+                  value={sinceDays}
+                  onChange={(e) => setSinceDays(e.target.value)}
+                  className="bg-zinc-900 border-zinc-800"
+                  required
+                />
+                <p className="text-xs text-zinc-500">Max 30 days</p>
+              </div>
+            </>
+          ) : (
+            <div className="flex flex-col gap-1">
+              <Label className="text-sm text-zinc-300">Instagram Post URL</Label>
               <Input
-                type="number"
-                min={1}
-                max={30}
-                value={sinceDays}
-                onChange={(e) => setSinceDays(e.target.value)}
+                value={postUrl}
+                onChange={(e) => setPostUrl(e.target.value)}
+                placeholder="https://instagram.com/p/ABC123/ or /reel/..."
                 className="bg-zinc-900 border-zinc-800"
                 required
               />
-              <p className="text-xs text-zinc-500">Max 30 days</p>
+              <p className="text-xs text-zinc-500">Paste the full URL of a single post or reel</p>
             </div>
           )}
 
-          <Button type="submit" disabled={loading || !currentProfile} className="bg-violet-600 hover:bg-violet-500" aria-busy={loading}>
+          <Button 
+            type="submit" 
+            disabled={loading || !currentProfile || (mode === 'profile' ? !account.trim() : !postUrl.trim())} 
+            className="bg-violet-600 hover:bg-violet-500" 
+            aria-busy={loading}
+          >
             {loading ? (
               <span className="flex items-center gap-2">
                 <RefreshCw className="h-4 w-4 animate-spin" />
                 {liveLog || 'Processing…'}
               </span>
             ) : mode === 'post' ? (
-              'Scrape Post'
+              <>
+                <Link2 className="h-4 w-4 mr-2" />
+                Scrape Post
+              </>
             ) : (
-              'Scrape Profile'
+              <>
+                <User className="h-4 w-4 mr-2" />
+                Scrape Profile
+              </>
             )}
           </Button>
 
@@ -427,20 +465,21 @@ export default function ScrapePage() {
         )}
       </Card>
 
+      {/* History section - only show for profile mode */}
       {mode === 'profile' && (
         <Card className="bg-zinc-950 border border-zinc-800 p-4">
           <div className="flex items-center justify-between mb-3">
             <div>
               <p className="text-sm text-zinc-500">Scrape history for this handle</p>
-              <p className="text-lg text-white">{input.replace(/^@/, '') || '–'}</p>
+              <p className="text-lg text-white">{account.replace(/^@/, '') || '–'}</p>
             </div>
             <div className="flex items-center gap-2">
               {historyLoading && <p className="text-xs text-zinc-500">Loading…</p>}
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => fetchHistory(input.trim().replace(/^@/, ''))}
-                disabled={!input.trim() || historyLoading}
+                onClick={() => fetchHistory(account.trim().replace(/^@/, ''))}
+                disabled={!account.trim() || historyLoading}
                 className="bg-zinc-900 border-zinc-800 h-7 px-2"
               >
                 <RefreshCw className={`h-3 w-3 ${historyLoading ? 'animate-spin' : ''}`} />
