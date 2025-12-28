@@ -213,39 +213,44 @@ export default function AutomationsPage() {
         )}
       </div>
 
-      {/* Compact Form */}
+      {/* Form */}
       {showForm && (
-        <Card className="bg-zinc-950 border border-zinc-800 p-3">
-          <form onSubmit={handleSubmit} className="space-y-3">
-            {/* Row 1: Account, Days, Frequency */}
-            <div className="flex items-center gap-2">
-              <div className="flex-1 max-w-[180px]">
+        <Card className="bg-zinc-950 border border-zinc-800 p-4">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div className="grid grid-cols-12 gap-3 items-end">
+              {/* Account */}
+              <div className="col-span-3">
+                <label className="text-xs text-zinc-500 mb-1 block">Account</label>
                 <Input
                   value={account}
                   onChange={(e) => setAccount(e.target.value)}
                   onFocus={(e) => e.target.select()}
                   placeholder="username"
-                  className="bg-zinc-900 border-zinc-800 h-8 text-sm"
+                  className="bg-zinc-900 border-zinc-800 h-9"
                   required
                 />
               </div>
               
-              <div className="w-16">
+              {/* Days Back */}
+              <div className="col-span-2">
+                <label className="text-xs text-zinc-500 mb-1 block">Days Back</label>
                 <Select value={daysBack} onValueChange={setDaysBack}>
-                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-8 text-sm">
+                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-9">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-900 border-zinc-800">
                     {[1, 2, 3, 5, 7, 14, 30].map(d => (
-                      <SelectItem key={d} value={String(d)}>{d}d</SelectItem>
+                      <SelectItem key={d} value={String(d)}>{d} days</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
 
-              <div className="w-24">
+              {/* Frequency */}
+              <div className="col-span-2">
+                <label className="text-xs text-zinc-500 mb-1 block">Frequency</label>
                 <Select value={frequency} onValueChange={(v) => setFrequency(v as 'hourly' | 'daily' | 'weekly')}>
-                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-8 text-sm">
+                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-9">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="bg-zinc-900 border-zinc-800">
@@ -257,59 +262,64 @@ export default function AutomationsPage() {
               </div>
 
               {/* Time picker */}
-              <div className="flex items-center gap-1">
-                <Select value={hour} onValueChange={setHour}>
-                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-8 w-14 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800 max-h-48">
-                    {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
-                      <SelectItem key={h} value={String(h)}>{h}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <span className="text-zinc-500">:</span>
-                <Select value={minute} onValueChange={setMinute}>
-                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-8 w-14 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800">
-                    {['00', '15', '30', '45'].map(m => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Select value={ampm} onValueChange={(v) => setAmpm(v as 'AM' | 'PM')}>
-                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-8 w-16 text-sm">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800">
-                    <SelectItem value="AM">AM</SelectItem>
-                    <SelectItem value="PM">PM</SelectItem>
-                  </SelectContent>
-                </Select>
-                <span className="text-xs text-zinc-500 ml-1">PST</span>
+              <div className="col-span-4">
+                <label className="text-xs text-zinc-500 mb-1 block">Run At (PST)</label>
+                <div className="flex items-center gap-2">
+                  <Select value={hour} onValueChange={setHour}>
+                    <SelectTrigger className="bg-zinc-900 border-zinc-800 h-9 flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800 max-h-48">
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
+                        <SelectItem key={h} value={String(h)}>{h}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <span className="text-zinc-500 text-lg">:</span>
+                  <Select value={minute} onValueChange={setMinute}>
+                    <SelectTrigger className="bg-zinc-900 border-zinc-800 h-9 flex-1">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800">
+                      {['00', '15', '30', '45'].map(m => (
+                        <SelectItem key={m} value={m}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={ampm} onValueChange={(v) => setAmpm(v as 'AM' | 'PM')}>
+                    <SelectTrigger className="bg-zinc-900 border-zinc-800 h-9 w-20">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-zinc-900 border-zinc-800">
+                      <SelectItem value="AM">AM</SelectItem>
+                      <SelectItem value="PM">PM</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
-              <Button type="submit" size="sm" className="bg-violet-600 hover:bg-violet-500 h-8 px-3">
-                <Check className="h-3.5 w-3.5" />
-              </Button>
-              <Button type="button" size="sm" variant="ghost" onClick={resetForm} className="h-8 px-2">
-                <X className="h-3.5 w-3.5" />
-              </Button>
+              {/* Actions */}
+              <div className="col-span-1 flex gap-1 justify-end">
+                <Button type="submit" size="sm" className="bg-violet-600 hover:bg-violet-500 h-9 w-9 p-0">
+                  <Check className="h-4 w-4" />
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={resetForm} className="h-9 w-9 p-0">
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
 
-            {/* Row 2: Days of week (only for weekly) */}
+            {/* Days of week (only for weekly) */}
             {frequency === 'weekly' && (
-              <div className="flex items-center gap-1">
-                <span className="text-xs text-zinc-500 mr-2">Days:</span>
-                {DAYS_OF_WEEK.map((day, idx) => (
+              <div className="flex items-center gap-2 pt-1">
+                <span className="text-xs text-zinc-500">Run on:</span>
+                {DAYS_FULL.map((day, idx) => (
                   <button
                     key={idx}
                     type="button"
                     onClick={() => toggleDay(idx)}
                     className={cn(
-                      "w-7 h-7 rounded text-xs font-medium transition-colors",
+                      "px-3 py-1.5 rounded text-xs font-medium transition-colors",
                       runOnDays.includes(idx)
                         ? "bg-violet-600 text-white"
                         : "bg-zinc-800 text-zinc-500 hover:bg-zinc-700"
