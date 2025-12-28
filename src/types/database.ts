@@ -1,5 +1,5 @@
 export type EventStatus = 'pending' | 'approved' | 'scheduled' | 'posted' | 'archived' | 'discarded'
-export type PostType = 'image' | 'carousel'
+export type PostType = 'image' | 'carousel' | 'reel'
 export type Platform = 'instagram' | 'tiktok' | 'twitter' | 'facebook' | 'linkedin' | 'youtube'
 export type AutomationFrequency = 'hourly' | 'daily' | 'weekly'
 export type AutomationRunStatus = 'success' | 'failed' | 'running'

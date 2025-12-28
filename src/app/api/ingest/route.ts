@@ -68,21 +68,19 @@ async function processPost(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const postData = post as any
 
-  // Skip pinned posts entirely (avoid media downloads/credits waste)
+  // Skip pinned posts entirely
   if (postData.isPinned || postData.pinned) {
     return { success: false, reason: 'Skipped pinned post' }
   }
 
-  // Skip Reels - check productType for "clips" which indicates Reels
+  // Skip stories only
   const productType = (postData.productType || '').toString().toLowerCase()
-  if (productType === 'clips' || productType === 'reel' || productType === 'reels' || productType === 'story') {
-    return { success: false, reason: 'Skipped reel/story' }
+  if (productType === 'story') {
+    return { success: false, reason: 'Skipped story' }
   }
 
-  // Skip videos - we only want images and carousels (Sidecars)
-  if (post.type === 'Video') {
-    return { success: false, reason: 'Skipped video' }
-  }
+  // Detect if this is a reel
+  const isReel = productType === 'clips' || productType === 'reel' || productType === 'reels' || post.type === 'Video'
 
   // Check if already exists in database
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -126,6 +124,10 @@ async function processPost(
   if (post.displayUrl) {
     originalMediaUrls.push(post.displayUrl)
   }
+  // Priority 6: For reels, use videoUrl or thumbnail as fallback
+  if (isReel && postData.videoUrl) {
+    originalMediaUrls.push(postData.videoUrl as string)
+  }
 
   // Deduplicate
   const uniqueMediaUrls = Array.from(new Set(originalMediaUrls))
@@ -134,8 +136,10 @@ async function processPost(
     return { success: false, reason: 'No valid media URLs found' }
   }
 
-  // Set postType based on Apify type field
-  if (post.type === 'Sidecar' || uniqueMediaUrls.length > 1) {
+  // Set postType based on Apify type field and reel detection
+  if (isReel) {
+    postType = 'reel'
+  } else if (post.type === 'Sidecar' || uniqueMediaUrls.length > 1) {
     postType = 'carousel'
   }
 

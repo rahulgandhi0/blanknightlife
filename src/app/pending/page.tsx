@@ -2,16 +2,20 @@
 
 import { useEffect, useState, useCallback } from 'react'
 import { EventCard } from '@/components/event-card'
-import { Clock, RefreshCw } from 'lucide-react'
+import { Clock, RefreshCw, Image, Film } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 import type { EventDiscovery } from '@/types/database'
 import { useProfileFetch } from '@/hooks/use-profile-fetch'
+
+type FilterType = 'all' | 'posts' | 'reels'
 
 export default function PendingPage() {
   const { fetchWithProfile, profileId, currentProfile } = useProfileFetch()
   const [events, setEvents] = useState<EventDiscovery[]>([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+  const [filter, setFilter] = useState<FilterType>('all')
 
   const fetchEvents = useCallback(async () => {
     if (!profileId) return
@@ -97,6 +101,18 @@ export default function PendingPage() {
     }
   }
 
+  // Filter events based on selected type
+  const filteredEvents = events.filter(event => {
+    if (filter === 'all') return true
+    if (filter === 'posts') return event.post_type !== 'reel'
+    if (filter === 'reels') return event.post_type === 'reel'
+    return true
+  })
+
+  // Count by type
+  const postsCount = events.filter(e => e.post_type !== 'reel').length
+  const reelsCount = events.filter(e => e.post_type === 'reel').length
+
   if (loading) {
     return (
       <div className="p-8">
@@ -115,31 +131,85 @@ export default function PendingPage() {
         <div className="flex items-center gap-3">
           <h1 className="text-2xl font-semibold leading-tight">Pending Review</h1>
           <p className="text-sm text-zinc-500">
-            {events.length} post{events.length !== 1 ? 's' : ''} awaiting approval
+            {events.length} total
           </p>
         </div>
-        <Button
-          onClick={handleRefresh}
-          variant="outline"
-          className="h-9 px-3 text-sm border-zinc-800"
-          disabled={refreshing}
-        >
-          <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-3">
+          {/* Filter tabs */}
+          <div className="flex gap-1 p-1 bg-zinc-900 rounded-lg">
+            <button
+              onClick={() => setFilter('all')}
+              className={cn(
+                "px-3 py-1.5 rounded text-sm font-medium transition-colors",
+                filter === 'all'
+                  ? "bg-zinc-800 text-white"
+                  : "text-zinc-400 hover:text-white"
+              )}
+            >
+              All ({events.length})
+            </button>
+            <button
+              onClick={() => setFilter('posts')}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors",
+                filter === 'posts'
+                  ? "bg-zinc-800 text-white"
+                  : "text-zinc-400 hover:text-white"
+              )}
+            >
+              <Image className="h-3.5 w-3.5" />
+              Posts ({postsCount})
+            </button>
+            <button
+              onClick={() => setFilter('reels')}
+              className={cn(
+                "flex items-center gap-1.5 px-3 py-1.5 rounded text-sm font-medium transition-colors",
+                filter === 'reels'
+                  ? "bg-violet-600 text-white"
+                  : "text-zinc-400 hover:text-white"
+              )}
+            >
+              <Film className="h-3.5 w-3.5" />
+              Reels ({reelsCount})
+            </button>
+          </div>
+          
+          <Button
+            onClick={handleRefresh}
+            variant="outline"
+            className="h-9 px-3 text-sm border-zinc-800"
+            disabled={refreshing}
+          >
+            <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
-      {events.length === 0 ? (
+      {filteredEvents.length === 0 ? (
         <div className="text-center py-16">
           <div className="mx-auto w-16 h-16 rounded-full bg-zinc-900 flex items-center justify-center mb-4">
-            <Clock className="h-8 w-8 text-zinc-600" />
+            {filter === 'reels' ? (
+              <Film className="h-8 w-8 text-zinc-600" />
+            ) : filter === 'posts' ? (
+              <Image className="h-8 w-8 text-zinc-600" />
+            ) : (
+              <Clock className="h-8 w-8 text-zinc-600" />
+            )}
           </div>
-          <h3 className="text-lg font-medium text-zinc-300 mb-2">All caught up!</h3>
-          <p className="text-zinc-500">No pending posts to review right now.</p>
+          <h3 className="text-lg font-medium text-zinc-300 mb-2">
+            {filter === 'all' ? 'All caught up!' : `No ${filter} pending`}
+          </h3>
+          <p className="text-zinc-500">
+            {filter === 'all' 
+              ? 'No pending posts to review right now.'
+              : `Try switching to a different filter.`
+            }
+          </p>
         </div>
       ) : (
         <div className="space-y-6">
-          {events.map((event) => (
+          {filteredEvents.map((event) => (
             <EventCard
               key={event.id}
               event={event}
@@ -152,4 +222,3 @@ export default function PendingPage() {
     </div>
   )
 }
-

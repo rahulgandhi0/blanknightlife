@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Calendar as CalendarIcon, Check, X, Sparkles, Clock, Wand2, Loader2 } from 'lucide-react'
+import { Calendar as CalendarIcon, Check, X, Sparkles, Clock, Wand2, Loader2, Film, Images } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { EventDiscovery } from '@/types/database'
 
@@ -213,10 +213,22 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
         </div>
 
         <div className="flex flex-col gap-2 h-full">
-          <div className="flex flex-col gap-0.5 text-[11px] text-zinc-500">
+          <div className="flex items-center gap-2 text-[11px] text-zinc-500">
             <span>@{event.source_account}</span>
+            {event.post_type === 'reel' && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-violet-500/50 text-violet-400">
+                <Film className="h-2.5 w-2.5 mr-1" />
+                Reel
+              </Badge>
+            )}
+            {event.post_type === 'carousel' && (
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-zinc-600 text-zinc-400">
+                <Images className="h-2.5 w-2.5 mr-1" />
+                Carousel
+              </Badge>
+            )}
             {event.posted_at_source && (
-              <span>{format(new Date(event.posted_at_source), 'MMM d, yyyy')}</span>
+              <span className="text-zinc-600">• {format(new Date(event.posted_at_source), 'MMM d')}</span>
             )}
           </div>
 

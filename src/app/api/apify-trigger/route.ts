@@ -186,19 +186,6 @@ async function handleSinglePost(
 
     const normalized = rawPosts.map(normalizePost)
     steps = updateStep(steps, 'Filter results', 'done', `1 post`)
-    
-    // Skip video check for single posts - let user decide
-    const filtered = normalized.filter(post => post.type !== 'Video')
-    
-    if (filtered.length === 0) {
-      return NextResponse.json({
-        success: true,
-        found: 0,
-        message: 'Post is a video (not supported)',
-        steps,
-        logs,
-      })
-    }
 
     steps = updateStep(steps, 'Ingest', 'running', 'Sending to Supabase')
     log('Sending post to /api/ingest')
@@ -206,7 +193,7 @@ async function handleSinglePost(
     const ingestResp = await fetch(`${baseUrl}/api/ingest?profile_id=${profile_id}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(filtered),
+      body: JSON.stringify(normalized),
     })
 
     if (!ingestResp.ok) {
@@ -368,14 +355,12 @@ export async function POST(request: NextRequest) {
     const normalized = rawPosts.map(normalizePost)
 
     const filtered = normalized.filter((post) => {
-      // Skip pinned
+      // Skip pinned posts
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (post.isPinned || (post as any).pinned) return false
-      // Skip reels/stories via productType
+      // Skip stories (but keep reels)
       const productType = (post.productType || '').toString().toLowerCase()
-      if (['clips', 'reel', 'reels', 'story'].includes(productType)) return false
-      // Skip videos
-      if (post.type === 'Video') return false
+      if (productType === 'story') return false
       // Must have timestamp within window
       if (post.timestamp) {
         const ts = new Date(post.timestamp).getTime()
@@ -392,13 +377,13 @@ export async function POST(request: NextRequest) {
       'done',
       `${filteredAndRecent.length} of ${normalized.length} kept after filters`
     )
-    log(`Filtered down to ${filteredAndRecent.length} posts (skipping pinned/reels/video/old)`)
+    log(`Filtered down to ${filteredAndRecent.length} posts (skipping pinned/stories/old)`)
 
     if (filteredAndRecent.length === 0) {
       return NextResponse.json({
         success: true,
         found: 0,
-        message: 'No eligible posts after filtering (likely only reels/pinned/old)',
+        message: 'No eligible posts after filtering (likely only pinned/stories/old)',
         steps,
         logs,
         fallbackUsed,
