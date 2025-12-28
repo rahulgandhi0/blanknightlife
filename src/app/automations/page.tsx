@@ -7,15 +7,11 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/contexts/auth-context'
 import type { ScrapeAutomation } from '@/types/database'
 
-const DAYS_OF_WEEK = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-const DAYS_FULL = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-
-// PST offset
+// PST offset (Pacific Standard Time = UTC-8)
 const PST_OFFSET = -8
 
 function pstToUtc(hour: number): number {
@@ -26,21 +22,60 @@ function utcToPst(hour: number): number {
   return (hour + PST_OFFSET + 24) % 24
 }
 
-// Convert 24h to 12h format
-function to12Hour(hour24: number): { hour: number; ampm: 'AM' | 'PM' } {
-  const ampm = hour24 >= 12 ? 'PM' : 'AM'
-  let hour = hour24 % 12
-  if (hour === 0) hour = 12
-  return { hour, ampm }
+// Parse time string like "9:30 AM" or "14:00" or "2pm" into { hour24, minute }
+function parseTimeInput(input: string): { hour24: number; minute: number } | null {
+  const str = input.trim().toLowerCase()
+  
+  // Try formats: 9:30am, 9:30 am, 14:00, 2pm, 2 pm
+  const ampmMatch = str.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)$/i)
+  if (ampmMatch) {
+    let hour = parseInt(ampmMatch[1], 10)
+    const minute = parseInt(ampmMatch[2] || '0', 10)
+    const ampm = ampmMatch[3].toLowerCase()
+    
+    if (ampm === 'pm' && hour !== 12) hour += 12
+    if (ampm === 'am' && hour === 12) hour = 0
+    
+    return { hour24: hour, minute }
+  }
+  
+  // Try 24h format: 14:30, 9:00
+  const h24Match = str.match(/^(\d{1,2}):(\d{2})$/)
+  if (h24Match) {
+    const hour = parseInt(h24Match[1], 10)
+    const minute = parseInt(h24Match[2], 10)
+    if (hour >= 0 && hour <= 23 && minute >= 0 && minute <= 59) {
+      return { hour24: hour, minute }
+    }
+  }
+  
+  // Try just hour: 9, 14
+  const justHour = parseInt(str, 10)
+  if (!isNaN(justHour) && justHour >= 0 && justHour <= 23) {
+    return { hour24: justHour, minute: 0 }
+  }
+  
+  return null
 }
 
-// Convert 12h to 24h format
-function to24Hour(hour12: number, ampm: 'AM' | 'PM'): number {
-  if (ampm === 'AM') {
-    return hour12 === 12 ? 0 : hour12
-  } else {
-    return hour12 === 12 ? 12 : hour12 + 12
-  }
+// Format hour/minute to 12h string
+function formatTime(hourUtc: number, minute: number): string {
+  const pstHour = utcToPst(hourUtc)
+  const ampm = pstHour >= 12 ? 'PM' : 'AM'
+  let h = pstHour % 12
+  if (h === 0) h = 12
+  return `${h}:${String(minute).padStart(2, '0')} ${ampm}`
+}
+
+// Format frequency hours to human readable
+function formatFrequency(hours: number): string {
+  if (hours === 1) return 'hourly'
+  if (hours < 24) return `every ${hours}h`
+  if (hours === 24) return 'daily'
+  if (hours === 48) return 'every 2 days'
+  if (hours === 168) return 'weekly'
+  if (hours % 24 === 0) return `every ${hours / 24} days`
+  return `every ${hours}h`
 }
 
 export default function AutomationsPage() {
@@ -51,14 +86,11 @@ export default function AutomationsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [runningId, setRunningId] = useState<string | null>(null)
   
-  // Form state
+  // Form state - all free text
   const [account, setAccount] = useState('')
   const [daysBack, setDaysBack] = useState('3')
-  const [frequency, setFrequency] = useState<'hourly' | 'daily' | 'weekly'>('daily')
-  const [hour, setHour] = useState('9')
-  const [minute, setMinute] = useState('00')
-  const [ampm, setAmpm] = useState<'AM' | 'PM'>('AM')
-  const [runOnDays, setRunOnDays] = useState([0, 1, 2, 3, 4, 5, 6])
+  const [frequencyHours, setFrequencyHours] = useState('24')
+  const [timeInput, setTimeInput] = useState('9:00 AM')
 
   const fetchAutomations = useCallback(async () => {
     if (!currentProfile?.id) return
@@ -81,11 +113,8 @@ export default function AutomationsPage() {
   const resetForm = () => {
     setAccount('')
     setDaysBack('3')
-    setFrequency('daily')
-    setHour('9')
-    setMinute('00')
-    setAmpm('AM')
-    setRunOnDays([0, 1, 2, 3, 4, 5, 6])
+    setFrequencyHours('24')
+    setTimeInput('9:00 AM')
     setShowForm(false)
     setEditingId(null)
   }
@@ -94,15 +123,18 @@ export default function AutomationsPage() {
     e.preventDefault()
     if (!currentProfile?.id || !account.trim()) return
 
-    const hour24 = to24Hour(parseInt(hour) || 9, ampm)
+    const parsedTime = parseTimeInput(timeInput)
+    if (!parsedTime) {
+      alert('Invalid time format. Try "9:00 AM" or "14:30"')
+      return
+    }
     
     const payload = {
       account_handle: account.trim(),
       days_back: parseInt(daysBack) || 3,
-      frequency,
-      run_at_hour: pstToUtc(hour24),
-      run_at_minute: parseInt(minute) || 0,
-      run_on_days: runOnDays,
+      frequency_hours: parseInt(frequencyHours) || 24,
+      run_at_hour: pstToUtc(parsedTime.hour24),
+      run_at_minute: parsedTime.minute,
     }
 
     try {
@@ -127,16 +159,10 @@ export default function AutomationsPage() {
   }
 
   const startEditing = (automation: ScrapeAutomation) => {
-    const pstHour = utcToPst(automation.run_at_hour)
-    const { hour: h12, ampm: ap } = to12Hour(pstHour)
-    
     setAccount(automation.account_handle)
     setDaysBack(String(automation.days_back))
-    setFrequency(automation.frequency)
-    setHour(String(h12))
-    setMinute(String(automation.run_at_minute).padStart(2, '0'))
-    setAmpm(ap)
-    setRunOnDays(automation.run_on_days)
+    setFrequencyHours(String(automation.frequency_hours))
+    setTimeInput(formatTime(automation.run_at_hour, automation.run_at_minute))
     setEditingId(automation.id)
     setShowForm(true)
   }
@@ -169,18 +195,6 @@ export default function AutomationsPage() {
     } finally {
       setRunningId(null)
     }
-  }
-
-  const toggleDay = (day: number) => {
-    setRunOnDays(prev => 
-      prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day].sort((a, b) => a - b)
-    )
-  }
-
-  const formatTime = (hourUtc: number, min: number) => {
-    const pstHour = utcToPst(hourUtc)
-    const { hour: h, ampm: ap } = to12Hour(pstHour)
-    return `${h}:${String(min).padStart(2, '0')} ${ap}`
   }
 
   if (loading) {
@@ -223,9 +237,16 @@ export default function AutomationsPage() {
                 <label className="text-xs text-zinc-500 mb-1 block">Account</label>
                 <Input
                   value={account}
-                  onChange={(e) => setAccount(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value
+                    if (!val.startsWith('@') && val.length > 0) {
+                      setAccount('@' + val)
+                    } else {
+                      setAccount(val)
+                    }
+                  }}
                   onFocus={(e) => e.target.select()}
-                  placeholder="username"
+                  placeholder="@username"
                   className="bg-zinc-900 border-zinc-800 h-9"
                   required
                 />
@@ -234,68 +255,42 @@ export default function AutomationsPage() {
               {/* Days Back */}
               <div className="col-span-2">
                 <label className="text-xs text-zinc-500 mb-1 block">Days Back</label>
-                <Select value={daysBack} onValueChange={setDaysBack}>
-                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800">
-                    {[1, 2, 3, 5, 7, 14, 30].map(d => (
-                      <SelectItem key={d} value={String(d)}>{d} days</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Input
+                  type="number"
+                  min="1"
+                  max="365"
+                  value={daysBack}
+                  onChange={(e) => setDaysBack(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  placeholder="3"
+                  className="bg-zinc-900 border-zinc-800 h-9"
+                />
               </div>
 
-              {/* Frequency */}
-              <div className="col-span-2">
-                <label className="text-xs text-zinc-500 mb-1 block">Frequency</label>
-                <Select value={frequency} onValueChange={(v) => setFrequency(v as 'hourly' | 'daily' | 'weekly')}>
-                  <SelectTrigger className="bg-zinc-900 border-zinc-800 h-9">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent className="bg-zinc-900 border-zinc-800">
-                    <SelectItem value="hourly">Hourly</SelectItem>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                  </SelectContent>
-                </Select>
+              {/* Frequency (hours) */}
+              <div className="col-span-3">
+                <label className="text-xs text-zinc-500 mb-1 block">Every N hours</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={frequencyHours}
+                  onChange={(e) => setFrequencyHours(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  placeholder="24"
+                  className="bg-zinc-900 border-zinc-800 h-9"
+                />
               </div>
 
-              {/* Time picker */}
-              <div className="col-span-4">
-                <label className="text-xs text-zinc-500 mb-1 block">Run At (PST)</label>
-                <div className="flex items-center gap-2">
-                  <Select value={hour} onValueChange={setHour}>
-                    <SelectTrigger className="bg-zinc-900 border-zinc-800 h-9 flex-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-zinc-900 border-zinc-800 max-h-48">
-                      {Array.from({ length: 12 }, (_, i) => i + 1).map(h => (
-                        <SelectItem key={h} value={String(h)}>{h}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <span className="text-zinc-500 text-lg">:</span>
-                  <Select value={minute} onValueChange={setMinute}>
-                    <SelectTrigger className="bg-zinc-900 border-zinc-800 h-9 flex-1">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-zinc-900 border-zinc-800">
-                      {['00', '15', '30', '45'].map(m => (
-                        <SelectItem key={m} value={m}>{m}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={ampm} onValueChange={(v) => setAmpm(v as 'AM' | 'PM')}>
-                    <SelectTrigger className="bg-zinc-900 border-zinc-800 h-9 w-20">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-zinc-900 border-zinc-800">
-                      <SelectItem value="AM">AM</SelectItem>
-                      <SelectItem value="PM">PM</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              {/* Time input */}
+              <div className="col-span-3">
+                <label className="text-xs text-zinc-500 mb-1 block">Start Time (PST)</label>
+                <Input
+                  value={timeInput}
+                  onChange={(e) => setTimeInput(e.target.value)}
+                  onFocus={(e) => e.target.select()}
+                  placeholder="9:00 AM"
+                  className="bg-zinc-900 border-zinc-800 h-9"
+                />
               </div>
 
               {/* Actions */}
@@ -309,27 +304,9 @@ export default function AutomationsPage() {
               </div>
             </div>
 
-            {/* Days of week (only for weekly) */}
-            {frequency === 'weekly' && (
-              <div className="flex items-center gap-2 pt-1">
-                <span className="text-xs text-zinc-500">Run on:</span>
-                {DAYS_FULL.map((day, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    onClick={() => toggleDay(idx)}
-                    className={cn(
-                      "px-3 py-1.5 rounded text-xs font-medium transition-colors",
-                      runOnDays.includes(idx)
-                        ? "bg-violet-600 text-white"
-                        : "bg-zinc-800 text-zinc-500 hover:bg-zinc-700"
-                    )}
-                  >
-                    {day}
-                  </button>
-                ))}
-              </div>
-            )}
+            <p className="text-[11px] text-zinc-600">
+              Examples: Days=3 means scrape posts from last 3 days. Frequency=24 means daily, 48=every 2 days, 1=hourly.
+            </p>
           </form>
         </Card>
       )}
@@ -363,20 +340,15 @@ export default function AutomationsPage() {
 
                 {/* Info */}
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-zinc-200">@{automation.account_handle}</span>
-                    <span className="text-xs text-zinc-500">{automation.days_back}d</span>
-                    <Badge variant="outline" className="text-[10px] border-zinc-700 text-zinc-500 capitalize px-1.5 py-0">
-                      {automation.frequency}
+                    <span className="text-xs text-zinc-500">{automation.days_back}d back</span>
+                    <Badge variant="outline" className="text-[10px] border-zinc-700 text-zinc-500 px-1.5 py-0">
+                      {formatFrequency(automation.frequency_hours)}
                     </Badge>
                     <span className="text-xs text-zinc-500">
-                      {formatTime(automation.run_at_hour, automation.run_at_minute)}
+                      @ {formatTime(automation.run_at_hour, automation.run_at_minute)} PST
                     </span>
-                    {automation.frequency === 'weekly' && (
-                      <span className="text-xs text-zinc-600">
-                        {automation.run_on_days.map(d => DAYS_FULL[d].charAt(0)).join('')}
-                      </span>
-                    )}
                   </div>
                   {automation.last_run_at && (
                     <p className="text-[11px] text-zinc-600">

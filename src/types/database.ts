@@ -1,7 +1,7 @@
 export type EventStatus = 'pending' | 'approved' | 'scheduled' | 'posted' | 'archived' | 'discarded'
 export type PostType = 'image' | 'carousel' | 'reel'
 export type Platform = 'instagram' | 'tiktok' | 'twitter' | 'facebook' | 'linkedin' | 'youtube'
-export type AutomationFrequency = 'hourly' | 'daily' | 'weekly'
+// Frequency is now stored as hours between runs (e.g., 1 = hourly, 24 = daily, 168 = weekly)
 export type AutomationRunStatus = 'success' | 'failed' | 'running'
 
 export interface Profile {
@@ -59,10 +59,9 @@ export interface ScrapeAutomation {
   profile_id: string
   account_handle: string
   days_back: number
-  frequency: AutomationFrequency
-  run_at_hour: number
+  frequency_hours: number  // Hours between runs (e.g., 1, 6, 12, 24, 48, 168)
+  run_at_hour: number      // Initial start hour (UTC)
   run_at_minute: number
-  run_on_days: number[]
   is_active: boolean
   last_run_at: string | null
   last_run_status: AutomationRunStatus | null
@@ -180,10 +179,9 @@ export interface Database {
           profile_id: string
           account_handle: string
           days_back?: number
-          frequency?: AutomationFrequency
+          frequency_hours?: number
           run_at_hour?: number
           run_at_minute?: number
-          run_on_days?: number[]
           is_active?: boolean
           id?: string
           created_at?: string
@@ -193,10 +191,9 @@ export interface Database {
           profile_id?: string
           account_handle?: string
           days_back?: number
-          frequency?: AutomationFrequency
+          frequency_hours?: number
           run_at_hour?: number
           run_at_minute?: number
-          run_on_days?: number[]
           is_active?: boolean
           last_run_at?: string | null
           last_run_status?: AutomationRunStatus | null

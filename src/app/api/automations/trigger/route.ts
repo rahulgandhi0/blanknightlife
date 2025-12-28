@@ -15,45 +15,12 @@ import { createClient } from '@/lib/supabase/server'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // 5 minutes max
 
-// Calculate next run time
+// Calculate next run time based on frequency_hours
 function calculateNextRun(
-  frequency: string,
-  runAtHour: number,
-  runAtMinute: number,
-  runOnDays: number[]
+  frequencyHours: number
 ): Date {
   const now = new Date()
-  const next = new Date(now)
-  
-  next.setUTCHours(runAtHour, runAtMinute, 0, 0)
-  
-  if (frequency === 'hourly') {
-    next.setUTCMinutes(runAtMinute)
-    if (next <= now) {
-      next.setUTCHours(next.getUTCHours() + 1)
-    }
-  } else if (frequency === 'daily') {
-    if (next <= now) {
-      next.setUTCDate(next.getUTCDate() + 1)
-    }
-  } else if (frequency === 'weekly') {
-    const currentDay = next.getUTCDay()
-    let daysUntilNext = 7
-    
-    for (const day of runOnDays.sort((a, b) => a - b)) {
-      const diff = day - currentDay
-      if (diff > 0 || (diff === 0 && next > now)) {
-        daysUntilNext = Math.min(daysUntilNext, diff > 0 ? diff : 7)
-      }
-    }
-    
-    if (daysUntilNext === 7 && runOnDays.length > 0) {
-      daysUntilNext = (runOnDays[0] + 7 - currentDay) % 7 || 7
-    }
-    
-    next.setUTCDate(next.getUTCDate() + daysUntilNext)
-  }
-  
+  const next = new Date(now.getTime() + frequencyHours * 60 * 60 * 1000)
   return next
 }
 
@@ -144,12 +111,7 @@ export async function GET(request: NextRequest) {
         const success = scrapeData.success === true
 
         // Calculate next run
-        const nextRunAt = calculateNextRun(
-          automation.frequency,
-          automation.run_at_hour,
-          automation.run_at_minute,
-          automation.run_on_days || [0, 1, 2, 3, 4, 5, 6]
-        )
+        const nextRunAt = calculateNextRun(automation.frequency_hours || 24)
 
         // Update automation status
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -181,12 +143,7 @@ export async function GET(request: NextRequest) {
         })
       } catch (err) {
         // Update as failed
-        const nextRunAt = calculateNextRun(
-          automation.frequency,
-          automation.run_at_hour,
-          automation.run_at_minute,
-          automation.run_on_days || [0, 1, 2, 3, 4, 5, 6]
-        )
+        const nextRunAt = calculateNextRun(automation.frequency_hours || 24)
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any)

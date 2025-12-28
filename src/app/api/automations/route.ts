@@ -8,48 +8,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-// Calculate next run time based on frequency and schedule
+// Calculate next run time based on frequency_hours
 function calculateNextRun(
-  frequency: string,
+  frequencyHours: number,
   runAtHour: number,
   runAtMinute: number,
-  runOnDays: number[]
+  fromDate?: Date
 ): Date {
-  const now = new Date()
+  const now = fromDate || new Date()
   const next = new Date(now)
   
-  // Set the time
+  // Set to the specified start time
   next.setUTCHours(runAtHour, runAtMinute, 0, 0)
   
-  if (frequency === 'hourly') {
-    // Next hour at the specified minute
-    next.setUTCMinutes(runAtMinute)
-    if (next <= now) {
-      next.setUTCHours(next.getUTCHours() + 1)
-    }
-  } else if (frequency === 'daily') {
-    // Tomorrow at the specified time if already passed today
-    if (next <= now) {
-      next.setUTCDate(next.getUTCDate() + 1)
-    }
-  } else if (frequency === 'weekly') {
-    // Find next matching day
-    const currentDay = next.getUTCDay()
-    let daysUntilNext = 7
-    
-    for (const day of runOnDays.sort((a, b) => a - b)) {
-      const diff = day - currentDay
-      if (diff > 0 || (diff === 0 && next > now)) {
-        daysUntilNext = Math.min(daysUntilNext, diff > 0 ? diff : 7)
-      }
-    }
-    
-    if (daysUntilNext === 7 && runOnDays.length > 0) {
-      // Wrap to next week
-      daysUntilNext = (runOnDays[0] + 7 - currentDay) % 7 || 7
-    }
-    
-    next.setUTCDate(next.getUTCDate() + daysUntilNext)
+  // If the calculated time is in the past, add frequency_hours until it's in the future
+  while (next <= now) {
+    next.setTime(next.getTime() + frequencyHours * 60 * 60 * 1000)
   }
   
   return next
@@ -87,10 +61,9 @@ export async function POST(request: NextRequest) {
       profile_id,
       account_handle,
       days_back = 3,
-      frequency = 'daily',
+      frequency_hours = 24,  // Default: daily
       run_at_hour = 9,
       run_at_minute = 0,
-      run_on_days = [0, 1, 2, 3, 4, 5, 6],
       is_active = true,
     } = body
 
@@ -102,7 +75,7 @@ export async function POST(request: NextRequest) {
     }
 
     const cleanHandle = account_handle.trim().replace(/^@/, '')
-    const nextRunAt = calculateNextRun(frequency, run_at_hour, run_at_minute, run_on_days)
+    const nextRunAt = calculateNextRun(frequency_hours, run_at_hour, run_at_minute)
 
     const supabase = await createClient()
     
@@ -113,10 +86,9 @@ export async function POST(request: NextRequest) {
         profile_id,
         account_handle: cleanHandle,
         days_back,
-        frequency,
+        frequency_hours,
         run_at_hour,
         run_at_minute,
-        run_on_days,
         is_active,
         next_run_at: nextRunAt.toISOString(),
       })
@@ -149,7 +121,7 @@ export async function PATCH(request: NextRequest) {
     const supabase = await createClient()
 
     // If schedule changed, recalculate next_run_at
-    if (updates.frequency || updates.run_at_hour !== undefined || updates.run_at_minute !== undefined || updates.run_on_days) {
+    if (updates.frequency_hours !== undefined || updates.run_at_hour !== undefined || updates.run_at_minute !== undefined) {
       // Fetch current automation to get full schedule
       const { data: current } = await supabase
         .from('scrape_automations')
@@ -160,12 +132,11 @@ export async function PATCH(request: NextRequest) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const curr = current as any
       if (curr) {
-        const frequency = updates.frequency || curr.frequency
+        const frequencyHours = updates.frequency_hours ?? curr.frequency_hours
         const runAtHour = updates.run_at_hour ?? curr.run_at_hour
         const runAtMinute = updates.run_at_minute ?? curr.run_at_minute
-        const runOnDays = updates.run_on_days || curr.run_on_days
 
-        updates.next_run_at = calculateNextRun(frequency, runAtHour, runAtMinute, runOnDays).toISOString()
+        updates.next_run_at = calculateNextRun(frequencyHours, runAtHour, runAtMinute).toISOString()
       }
     }
 
