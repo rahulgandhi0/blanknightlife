@@ -2,15 +2,15 @@
  * POST /api/socialbu-sync
  * 
  * Syncs post statuses between SocialBu and local database.
- * Checks all 'scheduled' events and updates their status based on:
- * 1. Whether scheduled_for time has passed
- * 2. SocialBu API response (if available)
+ * 1. Checks if scheduled_for time has passed → marks as posted
+ * 2. Queries SocialBu for recently published posts → matches and updates
  * 
  * Call this periodically or on page load to keep statuses in sync.
  */
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { SocialBuClient } from '@/lib/socialbu'
 
 interface SyncResult {
   eventId: string
@@ -29,9 +29,7 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createClient()
 
-    // Get all events that need syncing:
-    // - 'scheduled' status (sent to SocialBu, waiting to post)
-    // - 'approved' status with scheduled_for in the past (should have been sent)
+    // Get all events that need syncing
     let query = supabase
       .from('event_discovery')
       .select('*')
@@ -62,19 +60,31 @@ export async function POST(request: NextRequest) {
 
     const now = new Date()
 
+    // Try to get published posts from SocialBu for matching
+    let socialBuPublished: { id: number; content: string; published_at?: string }[] = []
+    try {
+      const client = new SocialBuClient()
+      socialBuPublished = await client.getPublishedPosts(undefined, 100)
+    } catch (e) {
+      // SocialBu API might not support this endpoint, continue without it
+      console.log('Could not fetch SocialBu published posts:', e)
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const event of events as any[]) {
       const scheduledFor = new Date(event.scheduled_for)
       const hasSocialBuId = event.meta_post_id || event.socialbu_post_id
-      
-      // Case 1: Event is 'scheduled' and time has passed → mark as 'posted'
-      if (event.status === 'scheduled' && scheduledFor < now && hasSocialBuId) {
+      const isPast = scheduledFor < now
+      const isPastBy30Min = scheduledFor < new Date(now.getTime() - 30 * 60 * 1000)
+
+      // Case 1: Event has SocialBu ID and time has passed → mark as posted
+      if (event.status === 'scheduled' && hasSocialBuId && isPast) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const { error: updateError } = await (supabase as any)
           .from('event_discovery')
           .update({
             status: 'posted',
-            posted_at: scheduledFor.toISOString(), // Use scheduled time as posted time
+            posted_at: scheduledFor.toISOString(),
             updated_at: new Date().toISOString(),
           })
           .eq('id', event.id)
@@ -86,17 +96,67 @@ export async function POST(request: NextRequest) {
             eventId: event.id,
             oldStatus: 'scheduled',
             newStatus: 'posted',
-            reason: 'Scheduled time passed',
+            reason: 'Scheduled time passed (has SocialBu ID)',
           })
         }
+        continue
       }
-      
-      // Case 2: Event is 'approved' but scheduled time passed and was never sent
-      // This shouldn't happen normally, but flag it
-      else if (event.status === 'approved' && scheduledFor < now && !hasSocialBuId) {
-        // Mark as needing attention - move back to pending or keep as approved
-        // For now, just log it
-        errors.push(`Event ${event.id} was approved for ${scheduledFor.toISOString()} but never sent to SocialBu`)
+
+      // Case 2: Try to match with SocialBu published posts by caption similarity
+      if (event.status === 'scheduled' && isPastBy30Min && event.final_caption) {
+        const captionStart = event.final_caption.slice(0, 50).toLowerCase()
+        
+        const match = socialBuPublished.find(p => 
+          p.content?.toLowerCase().startsWith(captionStart)
+        )
+
+        if (match) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const { error: updateError } = await (supabase as any)
+            .from('event_discovery')
+            .update({
+              status: 'posted',
+              posted_at: match.published_at || scheduledFor.toISOString(),
+              meta_post_id: String(match.id),
+              socialbu_post_id: match.id,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', event.id)
+
+          if (!updateError) {
+            results.push({
+              eventId: event.id,
+              oldStatus: event.status,
+              newStatus: 'posted',
+              reason: 'Matched with SocialBu published post',
+            })
+          }
+          continue
+        }
+      }
+
+      // Case 3: Scheduled but past due with no SocialBu ID - might have been posted manually
+      // After 1 hour, mark as posted anyway (assume success)
+      const isPastBy1Hour = scheduledFor < new Date(now.getTime() - 60 * 60 * 1000)
+      if (event.status === 'scheduled' && isPastBy1Hour) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { error: updateError } = await (supabase as any)
+          .from('event_discovery')
+          .update({
+            status: 'posted',
+            posted_at: scheduledFor.toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', event.id)
+
+        if (!updateError) {
+          results.push({
+            eventId: event.id,
+            oldStatus: 'scheduled',
+            newStatus: 'posted',
+            reason: 'Auto-marked after 1 hour',
+          })
+        }
       }
     }
 
@@ -125,7 +185,6 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams
   const profileId = searchParams.get('profile_id')
 
-  // Redirect to POST for actual sync
   const syncRequest = new NextRequest(request.url, {
     method: 'POST',
     body: JSON.stringify({ profile_id: profileId }),
@@ -134,4 +193,3 @@ export async function GET(request: NextRequest) {
 
   return POST(syncRequest)
 }
-

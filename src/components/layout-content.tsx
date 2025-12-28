@@ -16,12 +16,12 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
     )
   }
 
-  return (
-    <>
-      <Sidebar />
-      <main className="pl-64 min-h-screen">
-        {children}
-      </main>
-    </>
-  )
-}
+    return (
+      <>
+        <Sidebar />
+        <main className="pl-64 min-h-screen">
+          {children}
+        </main>
+      </>
+    )
+  }

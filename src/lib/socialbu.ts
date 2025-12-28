@@ -53,6 +53,17 @@ export interface PostMetrics {
   reach?: number;
 }
 
+export interface SocialBuPost {
+  id: number;
+  content: string;
+  status: 'scheduled' | 'published' | 'failed' | 'draft';
+  published_at?: string;
+  scheduled_at?: string;
+  account_id: number;
+  created_at: string;
+  updated_at: string;
+}
+
 /**
  * SocialBu API Client Class
  */
@@ -257,6 +268,58 @@ export class SocialBuClient {
     }
 
     return await response.json();
+  }
+
+  /**
+   * 5. GET PUBLISHED POSTS - Fetch recent published posts
+   * GET /api/v1/posts?status=published
+   */
+  async getPublishedPosts(accountId?: number, limit = 50): Promise<SocialBuPost[]> {
+    const params = new URLSearchParams({
+      status: 'published',
+      limit: String(limit),
+    });
+    if (accountId) {
+      params.set('account_id', String(accountId));
+    }
+
+    const response = await fetch(`${this.baseUrl}/posts?${params}`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch published posts: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.posts || data || [];
+  }
+
+  /**
+   * 6. GET SCHEDULED POSTS - Fetch pending scheduled posts
+   * GET /api/v1/posts?status=scheduled
+   */
+  async getScheduledPosts(accountId?: number, limit = 50): Promise<SocialBuPost[]> {
+    const params = new URLSearchParams({
+      status: 'scheduled',
+      limit: String(limit),
+    });
+    if (accountId) {
+      params.set('account_id', String(accountId));
+    }
+
+    const response = await fetch(`${this.baseUrl}/posts?${params}`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch scheduled posts: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.posts || data || [];
   }
 
   /**

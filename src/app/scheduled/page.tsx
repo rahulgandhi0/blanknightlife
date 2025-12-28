@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react'
 import Image from 'next/image'
 import { format, setHours, setMinutes } from 'date-fns'
-import { Calendar as CalendarIcon, Clock, Trash2, Send, Pencil, RefreshCw, AlertTriangle, CheckCircle2 } from 'lucide-react'
+import { Calendar as CalendarIcon, Clock, Trash2, Send, Pencil, RefreshCw, AlertTriangle, CheckCircle2, Check } from 'lucide-react'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -203,6 +203,24 @@ export default function ScheduledPage() {
         )
       )
       cancelEditing()
+    }
+  }
+
+  const markAsPosted = async (event: EventDiscovery) => {
+    const res = await fetch('/api/events', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: event.id,
+        updates: { 
+          status: 'posted',
+          posted_at: new Date().toISOString(),
+        },
+      }),
+    })
+
+    if (res.ok) {
+      setEvents((prev) => prev.filter((e) => e.id !== event.id))
     }
   }
 
@@ -443,6 +461,19 @@ export default function ScheduledPage() {
                           title="Send to SocialBu"
                         >
                           <Send className={cn("h-4 w-4", sendingId === event.id && "animate-pulse")} />
+                        </Button>
+                      )}
+
+                      {/* Mark as Posted (for past-due posts) */}
+                      {isPast && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => markAsPosted(event)}
+                          className="text-green-400 hover:text-green-300"
+                          title="Mark as Posted"
+                        >
+                          <Check className="h-4 w-4" />
                         </Button>
                       )}
 
