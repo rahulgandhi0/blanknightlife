@@ -15,6 +15,19 @@ import type { ScrapeAutomation } from '@/types/database'
 
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
+// PST is UTC-8, PDT is UTC-7. Using fixed -8 offset for simplicity.
+const PST_OFFSET = -8
+
+function pstToUtc(hour: number): number {
+  // Convert PST hour to UTC hour
+  return (hour - PST_OFFSET + 24) % 24
+}
+
+function utcToPst(hour: number): number {
+  // Convert UTC hour to PST hour
+  return (hour + PST_OFFSET + 24) % 24
+}
+
 export default function AutomationsPage() {
   const { currentProfile } = useAuth()
   const [automations, setAutomations] = useState<ScrapeAutomation[]>([])
@@ -23,10 +36,10 @@ export default function AutomationsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [runningId, setRunningId] = useState<string | null>(null)
   const [formData, setFormData] = useState({
-    account_handle: '',
+    account_handle: '@',
     days_back: 3,
     frequency: 'daily' as 'hourly' | 'daily' | 'weekly',
-    run_at_hour: 9,
+    run_at_hour_pst: 9, // Store in PST for UI
     run_at_minute: 0,
     run_on_days: [0, 1, 2, 3, 4, 5, 6] as number[],
   })
@@ -51,10 +64,10 @@ export default function AutomationsPage() {
 
   const resetForm = () => {
     setFormData({
-      account_handle: '',
+      account_handle: '@',
       days_back: 3,
       frequency: 'daily',
-      run_at_hour: 9,
+      run_at_hour_pst: 9,
       run_at_minute: 0,
       run_on_days: [0, 1, 2, 3, 4, 5, 6],
     })
@@ -62,9 +75,28 @@ export default function AutomationsPage() {
     setEditingId(null)
   }
 
+  // Handle @ prefix in username input
+  const handleUsernameChange = (value: string) => {
+    // Always ensure @ prefix
+    if (!value.startsWith('@')) {
+      value = '@' + value.replace(/@/g, '')
+    }
+    setFormData(prev => ({ ...prev, account_handle: value }))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!currentProfile?.id) return
+
+    // Convert PST to UTC for storage
+    const payload = {
+      account_handle: formData.account_handle,
+      days_back: formData.days_back,
+      frequency: formData.frequency,
+      run_at_hour: pstToUtc(formData.run_at_hour_pst), // Convert to UTC
+      run_at_minute: formData.run_at_minute,
+      run_on_days: formData.run_on_days,
+    }
 
     try {
       if (editingId) {
@@ -72,14 +104,14 @@ export default function AutomationsPage() {
         await fetch('/api/automations', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: editingId, updates: formData }),
+          body: JSON.stringify({ id: editingId, updates: payload }),
         })
       } else {
         // Create new
         await fetch('/api/automations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...formData, profile_id: currentProfile.id }),
+          body: JSON.stringify({ ...payload, profile_id: currentProfile.id }),
         })
       }
       resetForm()
@@ -91,10 +123,10 @@ export default function AutomationsPage() {
 
   const startEditing = (automation: ScrapeAutomation) => {
     setFormData({
-      account_handle: automation.account_handle,
+      account_handle: '@' + automation.account_handle.replace(/^@/, ''),
       days_back: automation.days_back,
       frequency: automation.frequency,
-      run_at_hour: automation.run_at_hour,
+      run_at_hour_pst: utcToPst(automation.run_at_hour), // Convert from UTC to PST
       run_at_minute: automation.run_at_minute,
       run_on_days: automation.run_on_days,
     })
@@ -198,7 +230,7 @@ export default function AutomationsPage() {
                 <Label>Instagram Account</Label>
                 <Input
                   value={formData.account_handle}
-                  onChange={(e) => setFormData(prev => ({ ...prev, account_handle: e.target.value }))}
+                  onChange={(e) => handleUsernameChange(e.target.value)}
                   placeholder="@username"
                   className="bg-zinc-900 border-zinc-800"
                   required
@@ -238,13 +270,13 @@ export default function AutomationsPage() {
               </div>
 
               <div className="space-y-2">
-                <Label>Run at (Hour, UTC)</Label>
+                <Label>Run at (Hour, PST)</Label>
                 <Input
                   type="number"
                   min={0}
                   max={23}
-                  value={formData.run_at_hour}
-                  onChange={(e) => setFormData(prev => ({ ...prev, run_at_hour: parseInt(e.target.value) || 0 }))}
+                  value={formData.run_at_hour_pst}
+                  onChange={(e) => setFormData(prev => ({ ...prev, run_at_hour_pst: parseInt(e.target.value) || 0 }))}
                   className="bg-zinc-900 border-zinc-800"
                 />
               </div>
@@ -364,7 +396,7 @@ export default function AutomationsPage() {
                   </div>
                   <div className="flex items-center gap-4 text-xs text-zinc-500">
                     <span>{automation.days_back} days back</span>
-                    <span>at {formatTime(automation.run_at_hour, automation.run_at_minute)} UTC</span>
+                    <span>at {formatTime(utcToPst(automation.run_at_hour), automation.run_at_minute)} PST</span>
                     {automation.frequency === 'weekly' && (
                       <span>
                         {automation.run_on_days.map(d => DAYS_OF_WEEK[d]).join(', ')}
@@ -439,25 +471,6 @@ export default function AutomationsPage() {
         </div>
       )}
 
-      {/* Setup instructions */}
-      <Card className="bg-zinc-950 border border-zinc-800 p-4">
-        <h3 className="font-medium text-zinc-200 mb-3">Setup Cron Job</h3>
-        <p className="text-sm text-zinc-500 mb-3">
-          To run automations automatically, set up a cron job in Vercel:
-        </p>
-        <div className="font-mono text-xs bg-zinc-900 rounded p-3 text-zinc-400 space-y-2">
-          <p className="text-zinc-500">// vercel.json</p>
-          <pre>{`{
-  "crons": [{
-    "path": "/api/automations/trigger",
-    "schedule": "*/15 * * * *"
-  }]
-}`}</pre>
-        </div>
-        <p className="text-xs text-zinc-600 mt-2">
-          This runs every 15 minutes to check for due automations.
-        </p>
-      </Card>
     </div>
   )
 }

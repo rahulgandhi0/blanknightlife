@@ -20,7 +20,15 @@ type ScrapeMode = 'profile' | 'post'
 export default function ScrapePage() {
   const { currentProfile } = useAuth()
   const [mode, setMode] = useState<ScrapeMode>('profile')
-  const [account, setAccount] = useState('')
+  const [account, setAccount] = useState('@')
+
+  // Handle @ prefix in username input
+  const handleAccountChange = (value: string) => {
+    if (!value.startsWith('@')) {
+      value = '@' + value.replace(/@/g, '')
+    }
+    setAccount(value)
+  }
   const [postUrl, setPostUrl] = useState('')
   const [sinceDays, setSinceDays] = useState('3')
   const [loading, setLoading] = useState(false)
@@ -328,8 +336,8 @@ export default function ScrapePage() {
                 <Label className="text-sm text-zinc-300">Instagram Username</Label>
                 <Input
                   value={account}
-                  onChange={(e) => setAccount(e.target.value)}
-                  placeholder="@username or username"
+                  onChange={(e) => handleAccountChange(e.target.value)}
+                  placeholder="@username"
                   className="bg-zinc-900 border-zinc-800"
                   required
                 />
