@@ -69,6 +69,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 20-minute buffer validation (server-side)
+    const scheduledTime = new Date(typedEvent.scheduled_for);
+    const minScheduleTime = new Date();
+    minScheduleTime.setMinutes(minScheduleTime.getMinutes() + 20);
+
+    if (scheduledTime < minScheduleTime) {
+      return NextResponse.json(
+        { success: false, error: 'Posts must be scheduled at least 20 minutes in the future' },
+        { status: 400 }
+      );
+    }
+
     if (!typedEvent.media_urls || typedEvent.media_urls.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Event must have at least one media file' },

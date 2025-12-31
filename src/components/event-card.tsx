@@ -162,6 +162,15 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
     const { hours, minutes } = parse12hTime(timeDisplay)
     const scheduledDateTime = setMinutes(setHours(selectedDate, hours), minutes)
     
+    // 20-minute buffer validation
+    const minScheduleTime = new Date()
+    minScheduleTime.setMinutes(minScheduleTime.getMinutes() + 20)
+    
+    if (scheduledDateTime < minScheduleTime) {
+      alert('Posts must be scheduled at least 20 minutes in the future')
+      return
+    }
+    
     setIsLoading(true)
     try {
       // Track edit for RL if AI caption was generated and edited

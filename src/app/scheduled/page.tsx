@@ -185,6 +185,15 @@ export default function ScheduledPage() {
     const { hours, minutes } = parse12hTime(editTime)
     const scheduledDateTime = setMinutes(setHours(editDate, hours), minutes)
 
+    // 20-minute buffer validation
+    const minScheduleTime = new Date()
+    minScheduleTime.setMinutes(minScheduleTime.getMinutes() + 20)
+    
+    if (scheduledDateTime < minScheduleTime) {
+      alert('Posts must be scheduled at least 20 minutes in the future')
+      return
+    }
+
     const res = await fetch('/api/events', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
