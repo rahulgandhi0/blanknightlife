@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createServiceClient } from '@/lib/supabase/server'
 import type { ApifyInstagramPost } from '@/types/apify'
 
 type StepStatus = 'pending' | 'running' | 'done' | 'error'
@@ -18,6 +19,32 @@ const stepList = (overrides?: Partial<Step>[]) =>
 
 const updateStep = (steps: Step[], label: string, status: StepStatus, info?: string) =>
   steps.map((s) => (s.label === label ? { ...s, status, info } : s))
+
+// Log scrape to scrape_history table
+async function logScrapeHistory(
+  profileId: string,
+  account: string,
+  postsFound: number,
+  postsIngested: number,
+  status: 'success' | 'partial' | 'error',
+  errorMessage?: string
+) {
+  try {
+    const supabase = createServiceClient()
+    await (supabase as ReturnType<typeof createServiceClient>)
+      .from('scrape_history')
+      .insert({
+        profile_id: profileId,
+        account: account.replace(/^@/, ''),
+        posts_found: postsFound,
+        posts_ingested: postsIngested,
+        status,
+        error_message: errorMessage || null,
+      } as never)
+  } catch (e) {
+    console.error('Failed to log scrape history:', e)
+  }
+}
 
 const typeFromRaw = (rawType?: string) => {
   if (!rawType) return 'Image'
@@ -206,6 +233,15 @@ async function handleSinglePost(
     const ingestData = await ingestResp.json()
     steps = updateStep(steps, 'Ingest', 'done', `Processed ${ingestData.processed || 0}`)
 
+    // Log to scrape_history
+    await logScrapeHistory(
+      profile_id,
+      shortcode || postUrl || 'single_post',
+      1,
+      ingestData.processed || 0,
+      'success'
+    )
+
     return NextResponse.json({
       success: true,
       found: 1,
@@ -216,6 +252,17 @@ async function handleSinglePost(
   } catch (error) {
     steps = updateStep(steps, 'Run Apify', 'error', 'Unexpected error')
     logs.push(`Error: ${String(error)}`)
+    
+    // Log error to scrape_history
+    await logScrapeHistory(
+      profile_id,
+      shortcode || postUrl || 'single_post',
+      0,
+      0,
+      'error',
+      String(error)
+    )
+    
     return NextResponse.json({ error: 'Internal error', details: String(error), steps, logs }, { status: 500 })
   }
 }
@@ -338,6 +385,17 @@ export async function POST(request: NextRequest) {
 
     if (!rawPosts || rawPosts.length === 0) {
       steps = updateStep(steps, 'Run Apify', 'error', 'No items returned')
+      
+      // Log to scrape_history
+      await logScrapeHistory(
+        profile_id,
+        cleanHandle,
+        0,
+        0,
+        'partial', // No data found
+        'No items returned (private account or no posts in range)'
+      )
+      
       return NextResponse.json({
         success: true,
         found: 0,
@@ -380,6 +438,15 @@ export async function POST(request: NextRequest) {
     log(`Filtered down to ${filteredAndRecent.length} posts (skipping pinned/stories/old)`)
 
     if (filteredAndRecent.length === 0) {
+      // Log to scrape_history - no new posts
+      await logScrapeHistory(
+        profile_id,
+        cleanHandle,
+        normalized.length,
+        0,
+        'success' // Still successful, just no new eligible posts
+      )
+      
       return NextResponse.json({
         success: true,
         found: 0,
@@ -410,6 +477,15 @@ export async function POST(request: NextRequest) {
 
     steps = updateStep(steps, 'Ingest', 'done', `Processed ${ingestData.processed || 0}`)
 
+    // Log to scrape_history
+    await logScrapeHistory(
+      profile_id,
+      cleanHandle,
+      filteredAndRecent.length,
+      ingestData.processed || 0,
+      ingestData.processed > 0 ? 'success' : 'partial'
+    )
+
     return NextResponse.json({
       success: true,
       found: filteredAndRecent.length,
@@ -422,6 +498,19 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     steps = updateStep(steps, 'Run Apify', 'error', 'Unexpected error')
     logs.push(`Error: ${String(error)}`)
+    
+    // Log error to scrape_history
+    if (profile_id && account) {
+      await logScrapeHistory(
+        profile_id,
+        account.replace(/^@/, ''),
+        0,
+        0,
+        'error',
+        String(error)
+      )
+    }
+    
     return NextResponse.json({ error: 'Internal error', details: String(error), steps, logs }, { status: 500 })
   }
 }

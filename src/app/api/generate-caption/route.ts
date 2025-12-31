@@ -4,9 +4,8 @@ import { rewriteCaption } from '@/lib/groq'
 import type { EventDiscovery } from '@/types/database'
 
 interface CaptionEdit {
-  ai_caption: string
-  user_edited_caption: string
-  original_caption: string | null
+  previous_caption: string | null
+  new_caption: string
 }
 
 // POST /api/generate-caption
@@ -41,21 +40,26 @@ export async function POST(request: NextRequest) {
 
     const event = data as EventDiscovery
 
-    // Fetch recent significant edits for RL (learn from past corrections)
+    // Fetch recent edits for RL (learn from past corrections)
     let learnedExamples: string | undefined
     if (useRL) {
       const { data: recentEdits } = await supabase
         .from('caption_edits')
-        .select('ai_caption, user_edited_caption, original_caption')
-        .eq('was_significant_edit', true)
+        .select('previous_caption, new_caption')
+        .not('previous_caption', 'is', null)
         .order('created_at', { ascending: false })
-        .limit(3)
+        .limit(5)
 
       if (recentEdits && recentEdits.length > 0) {
-        const examples = (recentEdits as CaptionEdit[]).map((edit, i) => 
-          `Correction ${i + 1}:\nAI wrote: "${edit.ai_caption}"\nUser preferred: "${edit.user_edited_caption}"`
-        ).join('\n\n')
-        learnedExamples = `\n\nLEARN FROM THESE RECENT USER CORRECTIONS:\n${examples}`
+        const examples = (recentEdits as CaptionEdit[])
+          .filter(edit => edit.previous_caption && edit.new_caption)
+          .map((edit, i) => 
+            `Example ${i + 1}:\nBefore: "${edit.previous_caption}"\nAfter: "${edit.new_caption}"`
+          ).join('\n\n')
+        
+        if (examples) {
+          learnedExamples = `\n\nLEARN FROM THESE RECENT USER EDITS (adapt your style to match the user's preferences):\n${examples}`
+        }
       }
     }
 

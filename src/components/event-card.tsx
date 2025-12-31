@@ -173,14 +173,16 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
     
     setIsLoading(true)
     try {
-      // Track edit for RL if AI caption was generated and edited
-      if (event.ai_generated_caption && caption !== event.ai_generated_caption) {
+      // Track caption edits for RL
+      // Compare against AI caption if available, otherwise against original caption
+      const previousCaption = event.ai_generated_caption || event.original_caption || ''
+      if (previousCaption && caption.trim() !== previousCaption.trim()) {
         fetch('/api/track-edit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             eventId: event.id,
-            aiCaption: event.ai_generated_caption,
+            aiCaption: previousCaption,
             userCaption: caption,
             context: context || undefined,
           }),
