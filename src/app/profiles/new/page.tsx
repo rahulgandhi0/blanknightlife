@@ -14,7 +14,7 @@ import type { SocialBuAccount } from '@/lib/socialbu'
 
 export default function NewProfilePage() {
   const router = useRouter()
-  const { profiles, refreshProfiles } = useAuth()
+  const { profiles, refreshProfiles, switchProfile } = useAuth()
   const supabase = createClient()
   
   const [loading, setLoading] = useState(false)
@@ -72,18 +72,28 @@ export default function NewProfilePage() {
     setLoading(true)
 
     try {
+      // Insert and return the new profile id
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const { error } = await (supabase.from('profiles') as any).insert({
-        name: profileData.name,
-        handle: profileData.handle,
-        socialbu_account_id: parseInt(profileData.socialbuAccountId),
-        platform: profileData.platform,
-        is_active: true,
-      })
+      const { data, error } = await (supabase.from('profiles') as any)
+        .insert({
+          name: profileData.name,
+          handle: profileData.handle,
+          socialbu_account_id: parseInt(profileData.socialbuAccountId),
+          platform: profileData.platform,
+          is_active: true,
+        })
+        .select('id')
+        .single()
 
       if (error) throw error
 
       await refreshProfiles()
+
+      // Set the new profile as current
+      if (data?.id) {
+        switchProfile(data.id)
+      }
+
       router.push('/')
     } catch (error) {
       console.error('Error creating profile:', error)

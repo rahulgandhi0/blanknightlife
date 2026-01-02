@@ -103,10 +103,8 @@ export default function AccountsPage() {
                   <Instagram className="h-5 w-5" />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-baseline gap-1.5">
-                    <p className="font-medium text-zinc-200">{account.name || account.username}</p>
-                    <p className="text-xs text-zinc-500">@{account.username}</p>
-                  </div>
+                  <p className="text-xs text-zinc-500">@{account.username || account.name || 'unknown'}</p>
+                  <p className="font-medium text-zinc-200 truncate">{account.name || account.username}</p>
                 </div>
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
