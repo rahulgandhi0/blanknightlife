@@ -1,7 +1,6 @@
 'use client'
 
 import { createContext, useContext, useEffect, useState } from 'react'
-import { createClient } from '@/lib/supabase/client'
 import type { Profile } from '@/types/database'
 
 interface ProfileContextType {
@@ -19,20 +18,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
 
-  const supabase = createClient()
-
   // Load all profiles
   const loadProfiles = async () => {
     try {
-      const { data: profilesData, error: profilesError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('is_active', true)
-        .order('created_at', { ascending: false })
+      const res = await fetch('/api/profiles')
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Failed to load profiles')
 
-      if (profilesError) throw profilesError
-
-      const typedProfiles = (profilesData || []) as Profile[]
+      const typedProfiles = (json.profiles || []) as Profile[]
       setProfiles(typedProfiles)
 
       // Set current profile from localStorage or first profile
@@ -64,23 +57,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const refreshProfiles = async () => {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('is_active', true)
-      .order('created_at', { ascending: false })
+    const res = await fetch('/api/profiles')
+    const json = await res.json()
+    if (!res.ok) return
 
-    if (!error && data) {
-      const typedProfiles = data as Profile[]
-      setProfiles(typedProfiles)
-      // If current profile was deleted, switch to first available
-      if (currentProfile && !typedProfiles.find(p => p.id === currentProfile.id)) {
-        setCurrentProfile(typedProfiles[0] || null)
-        if (typedProfiles[0]) {
-          localStorage.setItem('currentProfileId', typedProfiles[0].id)
-        } else {
-          localStorage.removeItem('currentProfileId')
-        }
+    const typedProfiles = (json.profiles || []) as Profile[]
+    setProfiles(typedProfiles)
+    // If current profile was deleted, switch to first available
+    if (currentProfile && !typedProfiles.find(p => p.id === currentProfile.id)) {
+      setCurrentProfile(typedProfiles[0] || null)
+      if (typedProfiles[0]) {
+        localStorage.setItem('currentProfileId', typedProfiles[0].id)
+      } else {
+        localStorage.removeItem('currentProfileId')
       }
     }
   }
