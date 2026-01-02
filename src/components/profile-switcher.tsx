@@ -11,11 +11,16 @@ import type { SocialBuAccount } from '@/lib/socialbu'
 
 export function ProfileSwitcher() {
   const router = useRouter()
-  const { currentProfile, profiles, switchProfile, refreshProfiles } = useAuth()
+  const { currentProfile, profiles, loading, switchProfile, refreshProfiles } = useAuth()
   const [open, setOpen] = useState(false)
   const [socialAccounts, setSocialAccounts] = useState<SocialBuAccount[]>([])
   const [socialLoading, setSocialLoading] = useState(false)
   const supabase = createClient()
+
+  // Debug logging
+  useEffect(() => {
+    console.log('ProfileSwitcher state:', { loading, profilesCount: profiles.length, currentProfile: currentProfile?.name || null })
+  }, [loading, profiles.length, currentProfile])
 
   const getPlatformIcon = (platform: string) => {
     switch (platform) {
@@ -91,12 +96,66 @@ export function ProfileSwitcher() {
     }
   }
 
-  // No profile yet - show SocialBu accounts to pick from (one-click create), fallback to manual add
-  if (!currentProfile) {
+  // Auto-select first profile if we have profiles but no current selection
+  useEffect(() => {
+    if (!loading && profiles.length > 0 && !currentProfile) {
+      console.log('Auto-selecting first profile:', profiles[0].name)
+      switchProfile(profiles[0].id)
+    }
+  }, [loading, profiles, currentProfile, switchProfile])
+
+  // Show loading state while fetching profiles
+  if (loading) {
+    return (
+      <div className="w-full p-4 border-t border-zinc-800">
+        <div className="flex items-center gap-3">
+          <div className="h-10 w-10 rounded-lg bg-zinc-800 animate-pulse" />
+          <div className="flex-1">
+            <div className="h-4 w-24 bg-zinc-800 rounded animate-pulse mb-1" />
+            <div className="h-3 w-16 bg-zinc-800 rounded animate-pulse" />
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // If we have profiles but just haven't selected one yet, show them for selection
+  if (!currentProfile && profiles.length > 0) {
     return (
       <div className="w-full border-t border-zinc-800">
         <div className="p-3">
           <p className="text-xs font-medium text-zinc-400 mb-2">Select a profile</p>
+          <div className="space-y-1">
+            {profiles.map((profile) => (
+              <button
+                key={profile.id}
+                onClick={() => switchProfile(profile.id)}
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-zinc-200 hover:bg-zinc-900"
+              >
+                <div className="h-8 w-8 rounded-md bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center flex-shrink-0">
+                  <span className="text-white font-semibold text-xs">
+                    {profile.name.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className="flex-1 min-w-0 text-left">
+                  <p className="font-medium truncate">{profile.name}</p>
+                  <p className="text-xs text-zinc-500 truncate capitalize">{profile.platform}</p>
+                </div>
+                <span className="text-xs text-violet-400">Select</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // No profiles at all - show SocialBu accounts to pick from (one-click create), fallback to manual add
+  if (!currentProfile) {
+    return (
+      <div className="w-full border-t border-zinc-800">
+        <div className="p-3">
+          <p className="text-xs font-medium text-zinc-400 mb-2">No profiles yet</p>
           {socialLoading && (
             <p className="text-xs text-zinc-500">Loading SocialBu accounts…</p>
           )}
@@ -119,7 +178,7 @@ export function ProfileSwitcher() {
                       {acc.type || 'instagram'}
                     </p>
                   </div>
-                  <span className="text-xs text-violet-400">Select</span>
+                  <span className="text-xs text-violet-400">Create</span>
                 </button>
               ))}
             </div>
