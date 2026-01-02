@@ -325,7 +325,6 @@ export class SocialBuClient {
   /**
    * CONVENIENCE METHOD: Schedule a post with media
    * Handles the complete flow: upload media → create post
-   * Note: Only uses the FIRST image due to SocialBu plan limitations (1 attachment max)
    */
   async schedulePostWithMedia(
     accountIds: number[],
@@ -334,11 +333,11 @@ export class SocialBuClient {
     scheduledAt: Date,
     postbackUrl?: string
   ): Promise<CreatePostResponse> {
-    // Only upload the first media file (SocialBu plan limitation: 1 attachment max)
+    // Upload all media files and get tokens
     const uploadTokens: Array<{ upload_token: string }> = [];
     
-    if (mediaUrls.length > 0) {
-      const token = await this.uploadMediaFromUrl(mediaUrls[0]);
+    for (const mediaUrl of mediaUrls) {
+      const token = await this.uploadMediaFromUrl(mediaUrl);
       uploadTokens.push({ upload_token: token });
     }
 
