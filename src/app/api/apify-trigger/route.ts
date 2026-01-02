@@ -499,18 +499,6 @@ export async function POST(request: NextRequest) {
     steps = updateStep(steps, 'Run Apify', 'error', 'Unexpected error')
     logs.push(`Error: ${String(error)}`)
     
-    // Log error to scrape_history
-    if (profile_id && account) {
-      await logScrapeHistory(
-        profile_id,
-        account.replace(/^@/, ''),
-        0,
-        0,
-        'error',
-        String(error)
-      )
-    }
-    
     return NextResponse.json({ error: 'Internal error', details: String(error), steps, logs }, { status: 500 })
   }
 }
