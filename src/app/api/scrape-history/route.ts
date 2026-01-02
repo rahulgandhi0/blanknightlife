@@ -22,7 +22,8 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ error: error.message }, { status: 500 })
       }
 
-      const scrapes = data || []
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const scrapes = (data || []) as any[]
       const lastIngestedAt = scrapes[0]?.created_at || null
 
       const statusCounts: Record<string, number> = {}
@@ -52,9 +53,12 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const allScrapes = (data || []) as any[]
+
     return NextResponse.json({
-      scrapes: data || [],
-      total: data?.length || 0,
+      scrapes: allScrapes,
+      total: allScrapes.length,
     })
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error', details: String(error) }, { status: 500 })
