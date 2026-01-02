@@ -8,6 +8,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
+const FIXED_FREQUENCY_HOURS = 36
+const FIXED_LOOKBACK_DAYS = 3
+
 // Calculate next run time based on frequency_hours
 function calculateNextRun(
   frequencyHours: number,
@@ -27,6 +30,39 @@ function calculateNextRun(
   }
   
   return next
+}
+
+function resolveBaseUrl(request: NextRequest): string {
+  try {
+    return new URL(request.url).origin
+  } catch {
+    const port = process.env.PORT || process.env.NEXT_PUBLIC_PORT || '3000'
+    const host = process.env.NEXT_PUBLIC_BASE_URL || process.env.VERCEL_URL
+    if (host?.startsWith('http')) {
+      return host
+    }
+    if (host) {
+      return `https://${host}`
+    }
+    return `http://localhost:${port}`
+  }
+}
+
+async function triggerImmediateScrape(baseUrl: string, account: string, profileId: string) {
+  if (!baseUrl || !profileId) return
+  try {
+    await fetch(`${baseUrl}/api/apify-trigger`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        account,
+        sinceHours: FIXED_FREQUENCY_HOURS,
+        profile_id: profileId,
+      }),
+    })
+  } catch (error) {
+    console.error('Failed to start immediate scrape', error)
+  }
 }
 
 // GET - List automations for a profile
@@ -60,8 +96,6 @@ export async function POST(request: NextRequest) {
     const { 
       profile_id,
       account_handle,
-      days_back = 3,
-      frequency_hours = 24,  // Default: daily
       run_at_hour = 9,
       run_at_minute = 0,
       is_active = true,
@@ -75,7 +109,7 @@ export async function POST(request: NextRequest) {
     }
 
     const cleanHandle = account_handle.trim().replace(/^@/, '')
-    const nextRunAt = calculateNextRun(frequency_hours, run_at_hour, run_at_minute)
+    const nextRunAt = calculateNextRun(FIXED_FREQUENCY_HOURS, run_at_hour, run_at_minute)
 
     const supabase = await createClient()
     
@@ -85,8 +119,8 @@ export async function POST(request: NextRequest) {
       .insert({
         profile_id,
         account_handle: cleanHandle,
-        days_back,
-        frequency_hours,
+        days_back: FIXED_LOOKBACK_DAYS,
+        frequency_hours: FIXED_FREQUENCY_HOURS,
         run_at_hour,
         run_at_minute,
         is_active,
@@ -98,6 +132,9 @@ export async function POST(request: NextRequest) {
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
+
+    const baseUrl = resolveBaseUrl(request)
+    void triggerImmediateScrape(baseUrl, cleanHandle, profile_id)
 
     return NextResponse.json({ success: true, automation: data })
   } catch (error) {

@@ -15,6 +15,8 @@ import { createClient } from '@/lib/supabase/server'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 300 // 5 minutes max
 
+const FIXED_FREQUENCY_HOURS = 36
+
 // Calculate next run time based on frequency_hours
 function calculateNextRun(
   frequencyHours: number
@@ -22,6 +24,20 @@ function calculateNextRun(
   const now = new Date()
   const next = new Date(now.getTime() + frequencyHours * 60 * 60 * 1000)
   return next
+}
+
+const LOOKBACK_FALLBACK_HOURS = 120
+
+// Calculate how many hours to look back for a scrape run.
+// If there's a previous run timestamp, use the actual gap; otherwise fall back to a fixed window.
+function calculateSinceHours(automation: any, referenceDate: Date): number {
+  if (!automation?.last_run_at) {
+    return LOOKBACK_FALLBACK_HOURS
+  }
+  const lastRunAt = new Date(automation.last_run_at)
+  const diffMs = Math.max(0, referenceDate.getTime() - lastRunAt.getTime())
+  const diffHours = Math.max(1, Math.ceil(diffMs / (60 * 60 * 1000)))
+  return diffHours
 }
 
 export async function GET(request: NextRequest) {
@@ -80,10 +96,11 @@ export async function GET(request: NextRequest) {
     // Process each automation
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     for (const automation of automations as any[]) {
+      const runTimestamp = new Date()
       const automationId = automation.id
       const accountHandle = automation.account_handle
-      const daysBack = automation.days_back || 3
       const profileId = automation.profile_id
+      const sinceHours = calculateSinceHours(automation, runTimestamp)
 
       // Mark as running
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -102,7 +119,7 @@ export async function GET(request: NextRequest) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             account: accountHandle,
-            sinceHours: daysBack * 24,
+            sinceHours,
             profile_id: profileId,
           }),
         })
@@ -111,7 +128,7 @@ export async function GET(request: NextRequest) {
         const success = scrapeData.success === true
 
         // Calculate next run
-        const nextRunAt = calculateNextRun(automation.frequency_hours || 24)
+        const nextRunAt = calculateNextRun(automation.frequency_hours || FIXED_FREQUENCY_HOURS)
 
         // Update automation status
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -139,11 +156,12 @@ export async function GET(request: NextRequest) {
             found: scrapeData.found || 0,
             processed: scrapeData.ingestResult?.processed || 0,
             nextRun: nextRunAt.toISOString(),
+            sinceHours,
           },
         })
       } catch (err) {
         // Update as failed
-        const nextRunAt = calculateNextRun(automation.frequency_hours || 24)
+        const nextRunAt = calculateNextRun(automation.frequency_hours || FIXED_FREQUENCY_HOURS)
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any)
@@ -162,7 +180,7 @@ export async function GET(request: NextRequest) {
           id: automationId,
           account: accountHandle,
           status: 'failed',
-          details: { error: String(err) },
+          details: { error: String(err), sinceHours },
         })
       }
     }

@@ -67,15 +67,11 @@ function formatTime(hourUtc: number, minute: number): string {
   return `${h}:${String(minute).padStart(2, '0')} ${ampm}`
 }
 
-// Format frequency hours to human readable
-function formatFrequency(hours: number): string {
-  if (hours === 1) return 'hourly'
-  if (hours < 24) return `every ${hours}h`
-  if (hours === 24) return 'daily'
-  if (hours === 48) return 'every 2 days'
-  if (hours === 168) return 'weekly'
-  if (hours % 24 === 0) return `every ${hours / 24} days`
-  return `every ${hours}h`
+const FIXED_FREQUENCY_HOURS = 36
+
+// Format frequency hours to human readable (now fixed)
+function formatFrequency(): string {
+  return `every ${FIXED_FREQUENCY_HOURS}h`
 }
 
 export default function AutomationsPage() {
@@ -88,8 +84,6 @@ export default function AutomationsPage() {
   
   // Form state - all free text
   const [account, setAccount] = useState('')
-  const [daysBack, setDaysBack] = useState('3')
-  const [frequencyHours, setFrequencyHours] = useState('24')
   const [timeInput, setTimeInput] = useState('9:00 AM')
 
   const fetchAutomations = useCallback(async () => {
@@ -112,8 +106,6 @@ export default function AutomationsPage() {
 
   const resetForm = () => {
     setAccount('')
-    setDaysBack('3')
-    setFrequencyHours('24')
     setTimeInput('9:00 AM')
     setShowForm(false)
     setEditingId(null)
@@ -131,8 +123,6 @@ export default function AutomationsPage() {
     
     const payload = {
       account_handle: account.trim(),
-      days_back: parseInt(daysBack) || 3,
-      frequency_hours: parseInt(frequencyHours) || 24,
       run_at_hour: pstToUtc(parsedTime.hour24),
       run_at_minute: parsedTime.minute,
     }
@@ -160,8 +150,6 @@ export default function AutomationsPage() {
 
   const startEditing = (automation: ScrapeAutomation) => {
     setAccount(automation.account_handle)
-    setDaysBack(String(automation.days_back))
-    setFrequencyHours(String(automation.frequency_hours))
     setTimeInput(formatTime(automation.run_at_hour, automation.run_at_minute))
     setEditingId(automation.id)
     setShowForm(true)
@@ -230,10 +218,10 @@ export default function AutomationsPage() {
       {/* Form */}
       {showForm && (
         <Card className="bg-zinc-950 border border-zinc-800 p-4">
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit}>
             <div className="grid grid-cols-12 gap-3 items-end">
               {/* Account */}
-              <div className="col-span-3">
+              <div className="col-span-6">
                 <label className="text-xs text-zinc-500 mb-1 block">Account</label>
                 <Input
                   value={account}
@@ -251,38 +239,9 @@ export default function AutomationsPage() {
                   required
                 />
               </div>
-              
-              {/* Days Back */}
-              <div className="col-span-2">
-                <label className="text-xs text-zinc-500 mb-1 block">Days Back</label>
-                <Input
-                  type="number"
-                  min="1"
-                  max="365"
-                  value={daysBack}
-                  onChange={(e) => setDaysBack(e.target.value)}
-                  onFocus={(e) => e.target.select()}
-                  placeholder="3"
-                  className="bg-zinc-900 border-zinc-800 h-9"
-                />
-              </div>
-
-              {/* Frequency (hours) */}
-              <div className="col-span-3">
-                <label className="text-xs text-zinc-500 mb-1 block">Every N hours</label>
-                <Input
-                  type="number"
-                  min="1"
-                  value={frequencyHours}
-                  onChange={(e) => setFrequencyHours(e.target.value)}
-                  onFocus={(e) => e.target.select()}
-                  placeholder="24"
-                  className="bg-zinc-900 border-zinc-800 h-9"
-                />
-              </div>
 
               {/* Time input */}
-              <div className="col-span-3">
+              <div className="col-span-4">
                 <label className="text-xs text-zinc-500 mb-1 block">Start Time (PST)</label>
                 <Input
                   value={timeInput}
@@ -294,7 +253,7 @@ export default function AutomationsPage() {
               </div>
 
               {/* Actions */}
-              <div className="col-span-1 flex gap-1 justify-end">
+              <div className="col-span-2 flex gap-1 justify-end">
                 <Button type="submit" size="sm" className="bg-violet-600 hover:bg-violet-500 h-9 w-9 p-0">
                   <Check className="h-4 w-4" />
                 </Button>
@@ -303,10 +262,6 @@ export default function AutomationsPage() {
                 </Button>
               </div>
             </div>
-
-            <p className="text-[11px] text-zinc-600">
-              Examples: Days=3 means scrape posts from last 3 days. Frequency=24 means daily, 48=every 2 days, 1=hourly.
-            </p>
           </form>
         </Card>
       )}
@@ -342,9 +297,8 @@ export default function AutomationsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-zinc-200">@{automation.account_handle}</span>
-                    <span className="text-xs text-zinc-500">{automation.days_back}d back</span>
                     <Badge variant="outline" className="text-[10px] border-zinc-700 text-zinc-500 px-1.5 py-0">
-                      {formatFrequency(automation.frequency_hours)}
+                      {formatFrequency()}
                     </Badge>
                     <span className="text-xs text-zinc-500">
                       @ {formatTime(automation.run_at_hour, automation.run_at_minute)} PST
