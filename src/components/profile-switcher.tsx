@@ -1,16 +1,21 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
+import { createClient } from '@/lib/supabase/client'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ChevronDown, Plus, CheckCircle2, Instagram, Twitter } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import type { SocialBuAccount } from '@/lib/socialbu'
 
 export function ProfileSwitcher() {
   const router = useRouter()
-  const { currentProfile, profiles, switchProfile } = useAuth()
+  const { currentProfile, profiles, switchProfile, refreshProfiles } = useAuth()
   const [open, setOpen] = useState(false)
+  const [socialAccounts, setSocialAccounts] = useState<SocialBuAccount[]>([])
+  const [socialLoading, setSocialLoading] = useState(false)
+  const supabase = createClient()
 
   const getPlatformIcon = (platform: string) => {
     switch (platform) {
@@ -34,23 +39,108 @@ export function ProfileSwitcher() {
     router.push('/profiles/new')
   }
 
-  // No profile yet - show add profile prompt
+  // If no profiles exist, preload SocialBu accounts so user can one-click create/select
+  useEffect(() => {
+    const loadSocialAccounts = async () => {
+      if (profiles.length > 0) return
+      setSocialLoading(true)
+      try {
+        const res = await fetch('/api/socialbu-accounts')
+        const data = await res.json()
+        if (data.success) {
+          setSocialAccounts(data.accounts || [])
+        }
+      } catch (error) {
+        console.error('Failed to load SocialBu accounts', error)
+      } finally {
+        setSocialLoading(false)
+      }
+    }
+    loadSocialAccounts()
+  }, [profiles.length])
+
+  // One-click create profile from SocialBu account
+  const createFromSocial = async (account: SocialBuAccount) => {
+    try {
+      const name = account.name || account.username || 'New Profile'
+      const handle = account.username || account.name || ''
+      const platform = (account.type as string) || 'instagram'
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data, error } = await (supabase.from('profiles') as any)
+        .insert({
+          name,
+          handle,
+          socialbu_account_id: account.id,
+          platform,
+          is_active: true,
+        })
+        .select('id')
+        .single()
+
+      if (error) throw error
+
+      await refreshProfiles()
+      if (data?.id) {
+        switchProfile(data.id)
+      }
+      setOpen(false)
+    } catch (error) {
+      console.error('Failed to create profile from SocialBu account', error)
+      alert('Failed to create profile. Please try again.')
+    }
+  }
+
+  // No profile yet - show SocialBu accounts to pick from (one-click create), fallback to manual add
   if (!currentProfile) {
     return (
-      <button 
-        onClick={handleAddProfile}
-        className="w-full p-4 border-t border-zinc-800 hover:bg-zinc-900 transition-colors text-left"
-      >
-        <div className="flex items-center gap-3">
-          <div className="h-10 w-10 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0">
-            <Plus className="h-5 w-5 text-zinc-400" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium text-white">Add Profile</p>
-            <p className="text-xs text-zinc-500">Connect a social account</p>
-          </div>
+      <div className="w-full border-t border-zinc-800">
+        <div className="p-3">
+          <p className="text-xs font-medium text-zinc-400 mb-2">Select a profile</p>
+          {socialLoading && (
+            <p className="text-xs text-zinc-500">Loading SocialBu accounts…</p>
+          )}
+          {!socialLoading && socialAccounts.length > 0 && (
+            <div className="space-y-1">
+              {socialAccounts.map((acc) => (
+                <button
+                  key={acc.id}
+                  onClick={() => createFromSocial(acc)}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors text-zinc-200 hover:bg-zinc-900"
+                >
+                  <div className="h-8 w-8 rounded-md bg-gradient-to-br from-violet-500 to-fuchsia-500 flex items-center justify-center flex-shrink-0">
+                    <span className="text-white font-semibold text-xs">
+                      {(acc.name || acc.username || '?').charAt(0).toUpperCase()}
+                    </span>
+                  </div>
+                  <div className="flex-1 min-w-0 text-left">
+                    <p className="font-medium truncate">@{acc.username || acc.name}</p>
+                    <p className="text-xs text-zinc-500 truncate capitalize">
+                      {acc.type || 'instagram'}
+                    </p>
+                  </div>
+                  <span className="text-xs text-violet-400">Select</span>
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-      </button>
+
+        <button 
+          onClick={handleAddProfile}
+          className="w-full p-4 border-t border-zinc-800 hover:bg-zinc-900 transition-colors text-left"
+        >
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-lg bg-zinc-800 flex items-center justify-center flex-shrink-0">
+              <Plus className="h-5 w-5 text-zinc-400" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-white">Add Profile</p>
+              <p className="text-xs text-zinc-500">Connect a social account</p>
+            </div>
+          </div>
+        </button>
+      </div>
     )
   }
 
