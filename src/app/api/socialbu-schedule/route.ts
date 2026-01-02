@@ -46,10 +46,10 @@ export async function POST(request: NextRequest) {
 
     const typedEvent = event as Database['public']['Tables']['event_discovery']['Row'];
 
-    // Validate event status
-    if (typedEvent.status !== 'approved') {
+    // Validate event status - allow approved or scheduled (for re-scheduling)
+    if (typedEvent.status !== 'approved' && typedEvent.status !== 'scheduled') {
       return NextResponse.json(
-        { success: false, error: 'Only approved events can be scheduled' },
+        { success: false, error: 'Only approved or scheduled events can be sent to SocialBu' },
         { status: 400 }
       );
     }

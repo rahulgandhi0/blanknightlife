@@ -120,14 +120,11 @@ export default function ScheduledPage() {
     }
   }, [fetchWithProfile, profileId])
 
-  // Sync first, then fetch
+  // Just fetch events on mount (sync only on manual refresh to avoid constant API calls)
   useEffect(() => {
-    const init = async () => {
-      await syncWithSocialBu()
-      await fetchEvents()
-    }
-    init()
-  }, [syncWithSocialBu, fetchEvents])
+    fetchEvents()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profileId])
 
   const handleRefresh = async () => {
     setSyncing(true)
