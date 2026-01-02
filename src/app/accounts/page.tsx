@@ -97,27 +97,29 @@ export default function AccountsPage() {
       ) : (
         <Card className="border border-zinc-800 bg-zinc-950 divide-y divide-zinc-800">
           {accounts.map((account) => (
-            <div key={account.id} className="p-4 flex items-center justify-between">
+            <div key={account.id} className="p-4 flex items-center justify-between hover:bg-zinc-900/50 transition-colors">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-violet-600 flex items-center justify-center text-white">
+                <div className="w-10 h-10 rounded-full bg-gradient-to-br from-pink-500 to-violet-600 flex items-center justify-center text-white flex-shrink-0">
                   <Instagram className="h-5 w-5" />
                 </div>
-                <div>
-                  <p className="font-medium text-zinc-200">{account.name || account.username}</p>
-                  <p className="text-xs text-zinc-500">@{account.username}</p>
+                <div className="min-w-0">
+                  <div className="flex items-baseline gap-1.5">
+                    <p className="font-medium text-zinc-200">{account.name || account.username}</p>
+                    <p className="text-xs text-zinc-500">@{account.username}</p>
+                  </div>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 flex-shrink-0">
                 <Badge 
                   variant="outline" 
                   className={account.is_active 
-                    ? "border-green-800 text-green-400" 
+                    ? "border-green-800 text-green-400 bg-green-950/20" 
                     : "border-zinc-700 text-zinc-500"
                   }
                 >
                   {account.is_active ? 'Active' : 'Inactive'}
                 </Badge>
-                <code className="text-sm font-mono text-violet-400 bg-zinc-900 px-2 py-1 rounded">
+                <code className="text-xs font-mono text-violet-400 bg-zinc-900 px-2 py-1 rounded">
                   {account.id}
                 </code>
               </div>
@@ -146,19 +148,6 @@ export default function AccountsPage() {
             Create a new profile in BlankNightLife with that account ID
           </li>
         </ol>
-      </Card>
-
-      {/* Environment Variables */}
-      <Card className="border border-zinc-800 bg-zinc-950 p-4">
-        <h3 className="font-medium text-zinc-200 mb-3">Required Environment Variables</h3>
-        <div className="font-mono text-xs bg-zinc-900 rounded p-3 space-y-1 text-zinc-400">
-          <p><span className="text-violet-400">SOCIALBU_API_KEY</span>=your_api_key</p>
-          <p><span className="text-violet-400">APIFY_API_TOKEN</span>=your_apify_token</p>
-          <p><span className="text-violet-400">GROQ_API_KEY</span>=your_groq_key</p>
-        </div>
-        <p className="text-xs text-zinc-500 mt-2">
-          Set these in Vercel → Settings → Environment Variables
-        </p>
       </Card>
     </div>
   )

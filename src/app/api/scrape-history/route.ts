@@ -1,45 +1,60 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import type { EventDiscovery } from '@/types/database'
 
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url)
     const account = searchParams.get('account')
-
-    if (!account) {
-      return NextResponse.json({ error: 'Missing account' }, { status: 400 })
-    }
+    const limit = parseInt(searchParams.get('limit') || '30', 10)
 
     const supabase = createServiceClient()
 
+    // If account is provided, return old format for backward compatibility
+    if (account) {
+      const { data, error } = await supabase
+        .from('scrape_history')
+        .select('created_at, status, posts_found, posts_ingested')
+        .eq('account', account)
+        .order('created_at', { ascending: false })
+        .limit(50)
+
+      if (error) {
+        return NextResponse.json({ error: error.message }, { status: 500 })
+      }
+
+      const scrapes = data || []
+      const lastIngestedAt = scrapes[0]?.created_at || null
+
+      const statusCounts: Record<string, number> = {}
+      scrapes.forEach((s) => {
+        statusCounts[s.status] = (statusCounts[s.status] || 0) + 1
+      })
+
+      const recent = scrapes.slice(0, 5)
+
+      return NextResponse.json({
+        account,
+        lastIngestedAt,
+        statusCounts,
+        recent,
+        total: scrapes.length,
+      })
+    }
+
+    // Fetch all scrapes (for activity log)
     const { data, error } = await supabase
-      .from('event_discovery')
-      .select('created_at, posted_at_source, status')
-      .eq('source_account', account)
+      .from('scrape_history')
+      .select('id, profile_id, account, posts_found, posts_ingested, status, error_message, created_at')
       .order('created_at', { ascending: false })
-      .limit(50)
+      .limit(limit)
 
     if (error) {
       return NextResponse.json({ error: error.message }, { status: 500 })
     }
 
-    const events = (data as Pick<EventDiscovery, 'created_at' | 'posted_at_source' | 'status'>[]) || []
-    const lastIngestedAt = events[0]?.created_at || null
-
-    const statusCounts: Record<string, number> = {}
-    events.forEach((e) => {
-      statusCounts[e.status] = (statusCounts[e.status] || 0) + 1
-    })
-
-    const recent = events.slice(0, 5)
-
     return NextResponse.json({
-      account,
-      lastIngestedAt,
-      statusCounts,
-      recent,
-      total: events.length,
+      scrapes: data || [],
+      total: data?.length || 0,
     })
   } catch (error) {
     return NextResponse.json({ error: 'Internal server error', details: String(error) }, { status: 500 })

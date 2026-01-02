@@ -74,6 +74,17 @@ function formatFrequency(): string {
   return `every ${FIXED_FREQUENCY_HOURS}h`
 }
 
+interface ScrapeHistoryItem {
+  id: string
+  profile_id: string
+  account: string
+  posts_found: number
+  posts_ingested: number
+  status: string
+  error_message: string | null
+  created_at: string
+}
+
 export default function AutomationsPage() {
   const { currentProfile } = useAuth()
   const [automations, setAutomations] = useState<ScrapeAutomation[]>([])
@@ -85,6 +96,10 @@ export default function AutomationsPage() {
   // Form state - all free text
   const [account, setAccount] = useState('')
   const [timeInput, setTimeInput] = useState('9:00 AM')
+
+  // Scrape history state
+  const [scrapeHistory, setScrapeHistory] = useState<ScrapeHistoryItem[]>([])
+  const [historyLoading, setHistoryLoading] = useState(false)
 
   const fetchAutomations = useCallback(async () => {
     if (!currentProfile?.id) return
@@ -100,9 +115,23 @@ export default function AutomationsPage() {
     }
   }, [currentProfile?.id])
 
+  const fetchScrapeHistory = useCallback(async () => {
+    setHistoryLoading(true)
+    try {
+      const res = await fetch('/api/scrape-history?limit=30')
+      const data = await res.json()
+      setScrapeHistory(data.scrapes || [])
+    } catch (error) {
+      console.error('Failed to fetch scrape history:', error)
+    } finally {
+      setHistoryLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     fetchAutomations()
-  }, [fetchAutomations])
+    fetchScrapeHistory()
+  }, [fetchAutomations, fetchScrapeHistory])
 
   const resetForm = () => {
     setAccount('')
@@ -178,6 +207,7 @@ export default function AutomationsPage() {
     try {
       await fetch(`/api/automations/trigger?force_id=${automation.id}`)
       await fetchAutomations()
+      await fetchScrapeHistory()
     } catch (error) {
       console.error('Failed to run automation:', error)
     } finally {
@@ -375,6 +405,94 @@ export default function AutomationsPage() {
           ))}
         </div>
       )}
+
+      {/* Scrape Activity Log */}
+      <div className="mt-8">
+        <div className="flex items-center justify-between mb-3">
+          <div>
+            <h2 className="text-lg font-semibold">Recent Scrape Activity</h2>
+            <p className="text-sm text-zinc-500">All scrapes across all accounts</p>
+          </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={fetchScrapeHistory}
+            disabled={historyLoading}
+            className="h-7 w-7 p-0"
+          >
+            <RefreshCw className={cn("h-3.5 w-3.5", historyLoading && "animate-spin")} />
+          </Button>
+        </div>
+
+        {historyLoading && scrapeHistory.length === 0 ? (
+          <Card className="bg-zinc-950 border border-zinc-800 p-4">
+            <div className="text-center text-sm text-zinc-500">Loading...</div>
+          </Card>
+        ) : scrapeHistory.length === 0 ? (
+          <Card className="bg-zinc-950 border border-zinc-800 p-8 text-center">
+            <Clock className="h-8 w-8 text-zinc-600 mx-auto mb-2" />
+            <p className="text-zinc-400">No scrape activity yet</p>
+          </Card>
+        ) : (
+          <Card className="bg-zinc-950 border border-zinc-800 overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="border-b border-zinc-800">
+                  <tr className="text-left">
+                    <th className="px-4 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider">Time</th>
+                    <th className="px-4 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider">Account</th>
+                    <th className="px-4 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider">Status</th>
+                    <th className="px-4 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider text-right">Found</th>
+                    <th className="px-4 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider text-right">Ingested</th>
+                    <th className="px-4 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider">Error</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-zinc-800">
+                  {scrapeHistory.map((item) => (
+                    <tr key={item.id} className="hover:bg-zinc-900/50 transition-colors">
+                      <td className="px-4 py-3 text-sm text-zinc-300">
+                        {format(new Date(item.created_at), 'MMM d, h:mm a')}
+                      </td>
+                      <td className="px-4 py-3 text-sm font-medium text-zinc-200">
+                        @{item.account}
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex items-center gap-2">
+                          <div className={cn(
+                            "w-2 h-2 rounded-full",
+                            item.status === 'success' ? "bg-green-500" :
+                            item.status === 'failed' ? "bg-red-500" :
+                            item.status === 'partial' ? "bg-yellow-500" :
+                            "bg-zinc-500"
+                          )} />
+                          <span className={cn(
+                            "text-xs capitalize",
+                            item.status === 'success' ? "text-green-400" :
+                            item.status === 'failed' ? "text-red-400" :
+                            item.status === 'partial' ? "text-yellow-400" :
+                            "text-zinc-400"
+                          )}>
+                            {item.status}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 text-sm text-zinc-400 text-right">
+                        {item.posts_found}
+                      </td>
+                      <td className="px-4 py-3 text-sm text-zinc-400 text-right">
+                        {item.posts_ingested}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-zinc-500 max-w-xs truncate">
+                        {item.error_message || '–'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+      </div>
     </div>
   )
 }

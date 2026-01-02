@@ -474,49 +474,80 @@ export default function ScrapePage() {
       </Card>
 
       {/* History section - only show for profile mode */}
-      {mode === 'profile' && (
-        <Card className="bg-zinc-950 border border-zinc-800 p-4">
+      {mode === 'profile' && account.replace(/^@/, '').trim() && (
+        <div>
           <div className="flex items-center justify-between mb-3">
             <div>
-              <p className="text-sm text-zinc-500">Scrape history for this handle</p>
-              <p className="text-lg text-white">{account.replace(/^@/, '') || '–'}</p>
+              <h2 className="text-lg font-semibold">History</h2>
+              <p className="text-sm text-zinc-500">{account}</p>
             </div>
-            <div className="flex items-center gap-2">
-              {historyLoading && <p className="text-xs text-zinc-500">Loading…</p>}
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => fetchHistory(account.trim().replace(/^@/, ''))}
-                disabled={!account.trim() || historyLoading}
-                className="bg-zinc-900 border-zinc-800 h-7 px-2"
-              >
-                <RefreshCw className={`h-3 w-3 ${historyLoading ? 'animate-spin' : ''}`} />
-              </Button>
-            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => fetchHistory(account.trim().replace(/^@/, ''))}
+              disabled={!account.trim() || historyLoading}
+              className="h-7 w-7 p-0"
+            >
+              <RefreshCw className={cn("h-3.5 w-3.5", historyLoading && "animate-spin")} />
+            </Button>
           </div>
+
           {history ? (
-            <div className="space-y-2 text-sm text-zinc-300">
-              <p>Last ingested: {history.lastIngestedAt ? new Date(history.lastIngestedAt).toLocaleString() : 'Never'}</p>
-              <p>Total ingested: {history.total}</p>
-              <div className="flex gap-3 text-xs text-zinc-400">
-                {Object.entries(history.statusCounts).map(([k, v]) => (
-                  <span key={k} className="capitalize">{k}: {v}</span>
-                ))}
-              </div>
-              <div className="border border-zinc-800 rounded p-2 space-y-1 text-xs text-zinc-400 max-h-48 overflow-y-auto">
-                {history.recent.length === 0 && <p>No recent ingests</p>}
-                {history.recent.map((item, idx) => (
-                  <div key={idx} className="flex items-center justify-between">
-                    <span>{new Date(item.created_at).toLocaleString()}</span>
-                    <span className="uppercase text-[11px] text-zinc-500">{item.status}</span>
+            <Card className="bg-zinc-950 border border-zinc-800 overflow-hidden">
+              <div className="p-4 border-b border-zinc-800">
+                <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <p className="text-zinc-500 text-xs mb-1">Last Scraped</p>
+                    <p className="text-zinc-200">
+                      {history.lastIngestedAt ? format(new Date(history.lastIngestedAt), 'MMM d, h:mm a') : 'Never'}
+                    </p>
                   </div>
-                ))}
+                  <div>
+                    <p className="text-zinc-500 text-xs mb-1">Total Posts</p>
+                    <p className="text-zinc-200">{history.total}</p>
+                  </div>
+                  <div>
+                    <p className="text-zinc-500 text-xs mb-1">Status</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {Object.entries(history.statusCounts).map(([k, v]) => (
+                        <Badge key={k} variant="outline" className="text-[10px] border-zinc-700 text-zinc-400">
+                          {k}: {v}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+              
+              {history.recent.length > 0 && (
+                <div className="divide-y divide-zinc-800">
+                  {history.recent.map((item, idx) => (
+                    <div key={idx} className="px-4 py-3 hover:bg-zinc-900/50 transition-colors flex items-center justify-between">
+                      <span className="text-sm text-zinc-300">
+                        {format(new Date(item.created_at), 'MMM d, h:mm a')}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <div className={cn(
+                          "w-2 h-2 rounded-full",
+                          item.status === 'pending' ? "bg-blue-500" :
+                          item.status === 'scheduled' ? "bg-violet-500" :
+                          item.status === 'posted' ? "bg-green-500" :
+                          item.status === 'discarded' ? "bg-red-500" :
+                          "bg-zinc-500"
+                        )} />
+                        <span className="text-xs text-zinc-500 uppercase">{item.status}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Card>
           ) : (
-            <p className="text-sm text-zinc-500">No history</p>
+            <Card className="bg-zinc-950 border border-zinc-800 p-6 text-center">
+              <p className="text-sm text-zinc-500">No history available</p>
+            </Card>
           )}
-        </Card>
+        </div>
       )}
     </div>
   )

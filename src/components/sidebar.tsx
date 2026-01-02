@@ -16,12 +16,12 @@ import {
 } from 'lucide-react'
 
 const navigation = [
-  { name: 'Overview', href: '/', icon: LayoutDashboard },
-  { name: 'Scrape Now', href: '/scrape', icon: RefreshCw },
-  { name: 'Automations', href: '/automations', icon: Zap },
+  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Pending', href: '/pending', icon: Clock, badge: true },
   { name: 'Scheduled', href: '/scheduled', icon: Calendar },
   { name: 'Posted', href: '/posted', icon: Send },
+  { name: 'Automations', href: '/automations', icon: Zap },
+  { name: 'Scrape Now', href: '/scrape', icon: RefreshCw },
   { name: 'Archived', href: '/archived', icon: Archive },
   { name: 'Accounts', href: '/accounts', icon: Users },
 ]

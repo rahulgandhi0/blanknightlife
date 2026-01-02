@@ -1,16 +1,21 @@
 -- ============================================================================
--- COMPLETE DATABASE RESET - Run this single file
+-- FRESH DATABASE RESET
 -- ============================================================================
--- Copy and paste this entire file into Supabase SQL Editor and run it
+-- Complete database wipe and rebuild from scratch
+-- ⚠️  WARNING: This will DELETE ALL DATA ⚠️
 
 -- ============================================================================
 -- STEP 1: DROP EVERYTHING
 -- ============================================================================
 
--- Drop auth trigger first
+-- Drop all triggers
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles CASCADE;
+DROP TRIGGER IF EXISTS update_event_discovery_updated_at ON event_discovery CASCADE;
+DROP TRIGGER IF EXISTS update_social_accounts_updated_at ON social_accounts CASCADE;
+DROP TRIGGER IF EXISTS update_scrape_automations_updated_at ON scrape_automations CASCADE;
 
--- Drop all tables
+-- Drop all tables in public schema
 DO $$ 
 DECLARE
     r RECORD;
@@ -34,7 +39,7 @@ BEGIN
     END LOOP;
 END $$;
 
--- Drop storage
+-- Drop storage bucket and all objects
 DO $$ 
 BEGIN
     DELETE FROM storage.objects WHERE bucket_id = 'posters';
@@ -73,7 +78,7 @@ CREATE POLICY "Anyone can delete"
   USING (bucket_id = 'posters');
 
 -- ============================================================================
--- STEP 3: CREATE FUNCTIONS
+-- STEP 3: CREATE HELPER FUNCTIONS
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION update_updated_at_column()
@@ -89,13 +94,14 @@ $$ LANGUAGE plpgsql;
 -- ============================================================================
 
 -- PROFILES TABLE
+-- Each profile represents a social media account (linked to SocialBu)
 CREATE TABLE profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
   handle TEXT,
   avatar_url TEXT,
   socialbu_account_id INTEGER NOT NULL UNIQUE,
-  platform TEXT NOT NULL,  -- No CHECK constraint - accept any platform string
+  platform TEXT NOT NULL DEFAULT 'instagram',
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -110,6 +116,7 @@ CREATE TRIGGER update_profiles_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 
 -- EVENT DISCOVERY TABLE
+-- Stores Instagram posts that have been scraped and processed
 CREATE TABLE event_discovery (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -139,6 +146,7 @@ CREATE INDEX idx_event_discovery_profile_id ON event_discovery(profile_id);
 CREATE INDEX idx_event_discovery_status ON event_discovery(status);
 CREATE INDEX idx_event_discovery_profile_status ON event_discovery(profile_id, status);
 CREATE INDEX idx_event_discovery_ig_post_id ON event_discovery(ig_post_id);
+CREATE INDEX idx_event_discovery_source_account ON event_discovery(source_account);
 
 CREATE TRIGGER update_event_discovery_updated_at
   BEFORE UPDATE ON event_discovery
@@ -146,6 +154,7 @@ CREATE TRIGGER update_event_discovery_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 
 -- SOCIAL ACCOUNTS TABLE
+-- Stores social media accounts from SocialBu
 CREATE TABLE social_accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
@@ -171,6 +180,7 @@ CREATE TRIGGER update_social_accounts_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 
 -- CAPTION EDITS TABLE
+-- Tracks caption edit history
 CREATE TABLE caption_edits (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id UUID NOT NULL REFERENCES event_discovery(id) ON DELETE CASCADE,
@@ -183,19 +193,60 @@ CREATE TABLE caption_edits (
 CREATE INDEX idx_caption_edits_event_id ON caption_edits(event_id);
 
 -- SCRAPE HISTORY TABLE
+-- Logs all scrape operations (manual and automated)
 CREATE TABLE scrape_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
   account TEXT NOT NULL,
   posts_found INTEGER DEFAULT 0,
   posts_ingested INTEGER DEFAULT 0,
-  status TEXT DEFAULT 'completed',
+  status TEXT DEFAULT 'success',
   error_message TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE INDEX idx_scrape_history_profile_id ON scrape_history(profile_id);
 CREATE INDEX idx_scrape_history_created_at ON scrape_history(created_at DESC);
+CREATE INDEX idx_scrape_history_account ON scrape_history(account);
+
+-- SCRAPE AUTOMATIONS TABLE
+-- Manages automated scraping schedules
+CREATE TABLE scrape_automations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  
+  -- What to scrape
+  account_handle TEXT NOT NULL,
+  days_back INTEGER NOT NULL DEFAULT 3,
+  
+  -- When to scrape (now uses frequency_hours instead of TEXT frequency)
+  frequency TEXT DEFAULT 'daily',  -- Legacy field, kept for compatibility
+  frequency_hours INTEGER DEFAULT 36,  -- Actual frequency in hours
+  run_at_hour INTEGER DEFAULT 9,
+  run_at_minute INTEGER DEFAULT 0,
+  run_on_days INTEGER[] DEFAULT ARRAY[0,1,2,3,4,5,6],
+  
+  -- Status tracking
+  is_active BOOLEAN DEFAULT true,
+  last_run_at TIMESTAMPTZ,
+  last_run_status TEXT,
+  last_run_result JSONB,
+  next_run_at TIMESTAMPTZ,
+  run_count INTEGER DEFAULT 0,
+  
+  -- Metadata
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_scrape_automations_profile_id ON scrape_automations(profile_id);
+CREATE INDEX idx_scrape_automations_active ON scrape_automations(is_active) WHERE is_active = true;
+CREATE INDEX idx_scrape_automations_next_run ON scrape_automations(next_run_at) WHERE is_active = true;
+
+CREATE TRIGGER update_scrape_automations_updated_at
+  BEFORE UPDATE ON scrape_automations
+  FOR EACH ROW
+  EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================================================
 -- STEP 5: DISABLE RLS & GRANT PERMISSIONS
@@ -206,18 +257,22 @@ ALTER TABLE event_discovery DISABLE ROW LEVEL SECURITY;
 ALTER TABLE social_accounts DISABLE ROW LEVEL SECURITY;
 ALTER TABLE caption_edits DISABLE ROW LEVEL SECURITY;
 ALTER TABLE scrape_history DISABLE ROW LEVEL SECURITY;
+ALTER TABLE scrape_automations DISABLE ROW LEVEL SECURITY;
 
 GRANT ALL ON ALL TABLES IN SCHEMA public TO anon;
 GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL TABLES IN SCHEMA public TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
+GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
 GRANT USAGE ON SCHEMA public TO anon;
 GRANT USAGE ON SCHEMA public TO authenticated;
+GRANT USAGE ON SCHEMA public TO service_role;
 
 -- ============================================================================
 -- DONE! ✅
 -- ============================================================================
 
-SELECT 'Database reset complete!' as status;
-SELECT tablename FROM pg_tables WHERE schemaname = 'public';
+SELECT 'Database reset complete! All tables recreated.' as status;
+SELECT tablename, schemaname FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;
 
