@@ -1,0 +1,33 @@
+name: Trigger Automations
+
+on:
+  schedule:
+    # Run every 15 minutes
+    - cron: '*/15 * * * *'
+  
+  # Allow manual trigger from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  trigger-automations:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Trigger automation endpoint
+        run: |
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
+            "https://blanknightlife.vercel.app/api/automations/trigger?secret=${{ secrets.CRON_SECRET }}")
+          
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
+          
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+          
+          if [ "$HTTP_CODE" -ne 200 ]; then
+            echo "❌ Automation trigger failed"
+            exit 1
+          fi
+          
+          echo "✅ Automation trigger successful"
+
