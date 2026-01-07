@@ -36,13 +36,17 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    // Check if event has a SocialBu post ID
-    if (!event.socialbu_post_id) {
+    // Check if event has a SocialBu post ID (check both fields)
+    const socialBuId = event.socialbu_post_id || (event.meta_post_id ? parseInt(event.meta_post_id) : null);
+    
+    if (!socialBuId) {
       return NextResponse.json(
         { success: false, error: 'Event is not linked to a SocialBu post' },
         { status: 400 }
       );
     }
+    
+    console.log('Updating SocialBu post:', { eventId, socialBuId, scheduledFor });
 
     // Validate scheduled time if provided
     if (scheduledFor) {
@@ -67,7 +71,7 @@ export async function PATCH(request: NextRequest) {
       updates.publish_at = new Date(scheduledFor).toISOString().slice(0, 19).replace('T', ' ');
     }
 
-    const result = await client.updatePost(event.socialbu_post_id, updates);
+    const result = await client.updatePost(socialBuId, updates);
 
     if (!result.success) {
       return NextResponse.json(

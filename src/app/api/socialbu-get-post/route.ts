@@ -36,8 +36,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    // Check if event has a SocialBu post ID
-    if (!event.socialbu_post_id) {
+    // Check if event has a SocialBu post ID (check both fields)
+    const socialBuId = event.socialbu_post_id || (event.meta_post_id ? parseInt(event.meta_post_id) : null);
+    
+    if (!socialBuId) {
       return NextResponse.json(
         { success: false, error: 'Event is not linked to a SocialBu post' },
         { status: 400 }
@@ -46,7 +48,7 @@ export async function GET(request: NextRequest) {
 
     // Fetch from SocialBu
     const client = new SocialBuClient();
-    const socialBuPost = await client.getPost(event.socialbu_post_id);
+    const socialBuPost = await client.getPost(socialBuId);
 
     // Parse the scheduled_at from SocialBu format (YYYY-MM-DD HH:MM:SS) to ISO
     let scheduledFor = event.scheduled_for;
