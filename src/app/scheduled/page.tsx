@@ -153,11 +153,56 @@ export default function ScheduledPage() {
 
   const handleRefresh = async () => {
     setSyncing(true)
-    const synced = await syncWithSocialBu(true)
-    await fetchEvents()
-    if (synced === 0) {
-      setSyncResult({ synced: 0, message: 'Everything is in sync' })
-      setTimeout(() => setSyncResult(null), 2000)
+    try {
+      // Push all scheduled events from UI to SocialBu
+      const scheduledEvents = events.filter(e => 
+        (e.socialbu_post_id || e.meta_post_id) && 
+        e.status === 'scheduled' &&
+        e.scheduled_for
+      )
+      
+      if (scheduledEvents.length === 0) {
+        setSyncResult({ synced: 0, message: 'No posts to sync' })
+        setTimeout(() => setSyncResult(null), 2000)
+        setSyncing(false)
+        return
+      }
+
+      console.log(`Pushing ${scheduledEvents.length} schedule(s) to SocialBu...`)
+      
+      const results = await Promise.allSettled(
+        scheduledEvents.map(async (event) => {
+          const res = await fetch('/api/socialbu-update', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              eventId: event.id,
+              scheduledFor: event.scheduled_for,
+            }),
+          })
+          const data = await res.json()
+          return data.success
+        })
+      )
+      
+      const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length
+      console.log(`✅ Pushed ${successCount}/${scheduledEvents.length} schedules to SocialBu`)
+      
+      setSyncResult({ 
+        synced: successCount, 
+        message: `Synced ${successCount}/${scheduledEvents.length} posts to SocialBu` 
+      })
+      setTimeout(() => setSyncResult(null), 3000)
+      
+      // Also check for any past posts that should be marked as posted
+      await syncWithSocialBu(true)
+      await fetchEvents()
+    } catch (error) {
+      console.error('Sync failed:', error)
+      setSyncResult({ synced: 0, message: 'Sync failed' })
+      setTimeout(() => setSyncResult(null), 3000)
+    } finally {
+      setSyncing(false)
     }
   }
 
@@ -228,7 +273,13 @@ export default function ScheduledPage() {
       }
 
       // If event is already scheduled in SocialBu, update it there too
-      if (event?.socialbu_post_id) {
+      if (event?.socialbu_post_id || event?.meta_post_id) {
+        console.log('Syncing reschedule to SocialBu...', { 
+          eventId: id, 
+          socialbu_post_id: event.socialbu_post_id,
+          newTime: scheduledDateTime.toISOString() 
+        })
+        
         const socialBuRes = await fetch('/api/socialbu-update', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -243,7 +294,14 @@ export default function ScheduledPage() {
         if (!socialBuData.success) {
           console.error('Failed to update SocialBu:', socialBuData.error)
           alert(`Warning: Updated locally but failed to sync with SocialBu: ${socialBuData.error}`)
+        } else {
+          console.log('✅ Successfully synced to SocialBu')
+          // Show success feedback
+          alert('✅ Rescheduled successfully and synced to SocialBu!')
         }
+      } else {
+        console.log('ℹ️ Event not yet in SocialBu, skipping sync')
+        alert('✅ Rescheduled locally (will sync when sent to SocialBu)')
       }
     } catch (error) {
       console.error('Failed to save reschedule:', error)
