@@ -67,11 +67,11 @@ function formatTime(hourUtc: number, minute: number): string {
   return `${h}:${String(minute).padStart(2, '0')} ${ampm}`
 }
 
-const FIXED_FREQUENCY_HOURS = 36
-
-// Format frequency hours to human readable (now fixed)
-function formatFrequency(): string {
-  return `every ${FIXED_FREQUENCY_HOURS}h`
+// Format frequency hours to human readable
+function formatFrequency(hours: number): string {
+  if (hours === 24) return 'daily'
+  if (hours === 168) return 'weekly'
+  return `every ${hours}h`
 }
 
 interface ScrapeHistoryItem {
@@ -93,9 +93,11 @@ export default function AutomationsPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [runningId, setRunningId] = useState<string | null>(null)
   
-  // Form state - all free text
+  // Form state
   const [account, setAccount] = useState('')
   const [timeInput, setTimeInput] = useState('9:00 AM')
+  const [frequencyHours, setFrequencyHours] = useState(36)
+  const [daysBack, setDaysBack] = useState(3)
 
   // Scrape history state
   const [scrapeHistory, setScrapeHistory] = useState<ScrapeHistoryItem[]>([])
@@ -136,6 +138,8 @@ export default function AutomationsPage() {
   const resetForm = () => {
     setAccount('')
     setTimeInput('9:00 AM')
+    setFrequencyHours(36)
+    setDaysBack(3)
     setShowForm(false)
     setEditingId(null)
   }
@@ -154,6 +158,8 @@ export default function AutomationsPage() {
       account_handle: account.trim(),
       run_at_hour: pstToUtc(parsedTime.hour24),
       run_at_minute: parsedTime.minute,
+      frequency_hours: frequencyHours,
+      days_back: daysBack,
     }
 
     try {
@@ -180,6 +186,8 @@ export default function AutomationsPage() {
   const startEditing = (automation: ScrapeAutomation) => {
     setAccount(automation.account_handle)
     setTimeInput(formatTime(automation.run_at_hour, automation.run_at_minute))
+    setFrequencyHours(automation.frequency_hours || 36)
+    setDaysBack(automation.days_back || 3)
     setEditingId(automation.id)
     setShowForm(true)
   }
@@ -249,47 +257,81 @@ export default function AutomationsPage() {
       {showForm && (
         <Card className="bg-zinc-950 border border-zinc-800 p-4">
           <form onSubmit={handleSubmit}>
-            <div className="grid grid-cols-12 gap-3 items-end">
-              {/* Account */}
-              <div className="col-span-6">
-                <label className="text-xs text-zinc-500 mb-1 block">Account</label>
-                <Input
-                  value={account}
-                  onChange={(e) => {
-                    const val = e.target.value
-                    if (!val.startsWith('@') && val.length > 0) {
-                      setAccount('@' + val)
-                    } else {
-                      setAccount(val)
-                    }
-                  }}
-                  onFocus={(e) => e.target.select()}
-                  placeholder="@username"
-                  className="bg-zinc-900 border-zinc-800 h-9"
-                  required
-                />
+            <div className="space-y-3">
+              <div className="grid grid-cols-12 gap-3 items-end">
+                {/* Account */}
+                <div className="col-span-6">
+                  <label className="text-xs text-zinc-500 mb-1 block">Account</label>
+                  <Input
+                    value={account}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (!val.startsWith('@') && val.length > 0) {
+                        setAccount('@' + val)
+                      } else {
+                        setAccount(val)
+                      }
+                    }}
+                    onFocus={(e) => e.target.select()}
+                    placeholder="@username"
+                    className="bg-zinc-900 border-zinc-800 h-9"
+                    required
+                  />
+                </div>
+
+                {/* Time input */}
+                <div className="col-span-6">
+                  <label className="text-xs text-zinc-500 mb-1 block">Start Time (PST)</label>
+                  <Input
+                    value={timeInput}
+                    onChange={(e) => setTimeInput(e.target.value)}
+                    onFocus={(e) => e.target.select()}
+                    placeholder="9:00 AM"
+                    className="bg-zinc-900 border-zinc-800 h-9"
+                  />
+                </div>
               </div>
 
-              {/* Time input */}
-              <div className="col-span-4">
-                <label className="text-xs text-zinc-500 mb-1 block">Start Time (PST)</label>
-                <Input
-                  value={timeInput}
-                  onChange={(e) => setTimeInput(e.target.value)}
-                  onFocus={(e) => e.target.select()}
-                  placeholder="9:00 AM"
-                  className="bg-zinc-900 border-zinc-800 h-9"
-                />
-              </div>
+              <div className="grid grid-cols-12 gap-3 items-end">
+                {/* Frequency */}
+                <div className="col-span-6">
+                  <label className="text-xs text-zinc-500 mb-1 block">Frequency</label>
+                  <select
+                    value={frequencyHours}
+                    onChange={(e) => setFrequencyHours(Number(e.target.value))}
+                    className="w-full h-9 bg-zinc-900 border border-zinc-800 rounded-md px-3 text-sm text-white focus:border-violet-500 focus:ring-0"
+                  >
+                    <option value={12}>Every 12 hours</option>
+                    <option value={24}>Daily (24h)</option>
+                    <option value={36}>Every 36 hours</option>
+                    <option value={48}>Every 2 days (48h)</option>
+                    <option value={72}>Every 3 days (72h)</option>
+                    <option value={168}>Weekly (168h)</option>
+                  </select>
+                </div>
 
-              {/* Actions */}
-              <div className="col-span-2 flex gap-1 justify-end">
-                <Button type="submit" size="sm" className="bg-violet-600 hover:bg-violet-500 h-9 w-9 p-0">
-                  <Check className="h-4 w-4" />
-                </Button>
-                <Button type="button" size="sm" variant="ghost" onClick={resetForm} className="h-9 w-9 p-0">
-                  <X className="h-4 w-4" />
-                </Button>
+                {/* Days Back */}
+                <div className="col-span-4">
+                  <label className="text-xs text-zinc-500 mb-1 block">Days Back</label>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={daysBack}
+                    onChange={(e) => setDaysBack(Number(e.target.value))}
+                    className="bg-zinc-900 border-zinc-800 h-9"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="col-span-2 flex gap-1 justify-end">
+                  <Button type="submit" size="sm" className="bg-violet-600 hover:bg-violet-500 h-9 w-9 p-0">
+                    <Check className="h-4 w-4" />
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={resetForm} className="h-9 w-9 p-0">
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             </div>
           </form>
@@ -328,10 +370,13 @@ export default function AutomationsPage() {
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-medium text-zinc-200">@{automation.account_handle}</span>
                     <Badge variant="outline" className="text-[10px] border-zinc-700 text-zinc-500 px-1.5 py-0">
-                      {formatFrequency()}
+                      {formatFrequency(automation.frequency_hours || 36)}
                     </Badge>
                     <span className="text-xs text-zinc-500">
                       @ {formatTime(automation.run_at_hour, automation.run_at_minute)} PST
+                    </span>
+                    <span className="text-[10px] text-zinc-600">
+                      ({automation.days_back || 3}d back)
                     </span>
                   </div>
                   {automation.last_run_at && (

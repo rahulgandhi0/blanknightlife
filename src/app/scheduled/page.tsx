@@ -7,40 +7,12 @@ import { Calendar as CalendarIcon, Clock, Trash2, Send, Pencil, RefreshCw, Alert
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
 import { Calendar } from '@/components/ui/calendar'
+import { TimeInput } from '@/components/ui/time-input'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import type { EventDiscovery } from '@/types/database'
 import { useProfileFetch } from '@/hooks/use-profile-fetch'
-
-function formatTo12h(input: string): string {
-  const digits = input.replace(/\D/g, '')
-  if (digits.length === 0) return '12:00 PM'
-  
-  let hours: number
-  let minutes: number
-  
-  if (digits.length <= 2) {
-    hours = parseInt(digits, 10)
-    minutes = 0
-  } else if (digits.length === 3) {
-    hours = parseInt(digits.slice(0, 1), 10)
-    minutes = parseInt(digits.slice(1), 10)
-  } else {
-    hours = parseInt(digits.slice(0, 2), 10)
-    minutes = parseInt(digits.slice(2, 4), 10)
-  }
-  
-  hours = Math.min(Math.max(hours, 0), 23)
-  minutes = Math.min(Math.max(minutes, 0), 59)
-  
-  const meridiem = hours >= 12 ? 'PM' : 'AM'
-  let displayHours = hours % 12
-  if (displayHours === 0) displayHours = 12
-  
-  return `${displayHours}:${minutes.toString().padStart(2, '0')} ${meridiem}`
-}
 
 function parse12hTime(timeStr: string): { hours: number; minutes: number } {
   const match = timeStr.match(/(\d+):(\d+)\s*(AM|PM)/i)
@@ -65,7 +37,6 @@ export default function ScheduledPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDate, setEditDate] = useState<Date | undefined>()
   const [editTime, setEditTime] = useState('12:00 PM')
-  const [editTimeRaw, setEditTimeRaw] = useState('')
   const [calendarOpen, setCalendarOpen] = useState(false)
   const [sendingId, setSendingId] = useState<string | null>(null)
 
@@ -120,11 +91,65 @@ export default function ScheduledPage() {
     }
   }, [fetchWithProfile, profileId])
 
-  // Just fetch events on mount (sync only on manual refresh to avoid constant API calls)
+  // Sync individual event with SocialBu
+  const syncEventWithSocialBu = useCallback(async (eventId: string) => {
+    try {
+      const res = await fetch(`/api/socialbu-get-post?eventId=${eventId}`)
+      const data = await res.json()
+      
+      if (data.success && data.event) {
+        // Update local state with SocialBu data
+        setEvents((prev) =>
+          prev.map((e) =>
+            e.id === eventId 
+              ? { 
+                  ...e, 
+                  scheduled_for: data.event.scheduled_for,
+                  final_caption: data.event.final_caption,
+                } 
+              : e
+          ).sort((a, b) => 
+            new Date(a.scheduled_for || 0).getTime() - new Date(b.scheduled_for || 0).getTime()
+          )
+        )
+        return true
+      }
+      return false
+    } catch (error) {
+      console.error('Failed to sync event with SocialBu:', error)
+      return false
+    }
+  }, [])
+
+  // Sync all scheduled events with SocialBu on page load
+  const syncAllWithSocialBu = useCallback(async () => {
+    const scheduledEvents = events.filter(e => e.socialbu_post_id && e.status === 'scheduled')
+    
+    if (scheduledEvents.length === 0) return
+
+    console.log(`Syncing ${scheduledEvents.length} events with SocialBu...`)
+    
+    const results = await Promise.allSettled(
+      scheduledEvents.map(event => syncEventWithSocialBu(event.id))
+    )
+    
+    const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length
+    console.log(`Synced ${successCount}/${scheduledEvents.length} events with SocialBu`)
+  }, [events, syncEventWithSocialBu])
+
+  // Fetch events on mount and sync with SocialBu
   useEffect(() => {
     fetchEvents()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profileId])
+
+  // Sync with SocialBu after events are loaded
+  useEffect(() => {
+    if (events.length > 0 && !loading) {
+      syncAllWithSocialBu()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading])
 
   const handleRefresh = async () => {
     setSyncing(true)
@@ -155,7 +180,7 @@ export default function ScheduledPage() {
     setEditingId(event.id)
     if (event.scheduled_for) {
       setEditDate(new Date(event.scheduled_for))
-      setEditTime(format(new Date(event.scheduled_for), 'h:mm a'))
+      setEditTime(format(new Date(event.scheduled_for), 'h:mm a').toUpperCase())
     } else {
       setEditDate(new Date())
       setEditTime('12:00 PM')
@@ -166,14 +191,6 @@ export default function ScheduledPage() {
     setEditingId(null)
     setEditDate(undefined)
     setEditTime('12:00 PM')
-    setEditTimeRaw('')
-  }
-
-  const handleTimeBlur = () => {
-    if (editTimeRaw.trim()) {
-      setEditTime(formatTo12h(editTimeRaw))
-    }
-    setEditTimeRaw('')
   }
 
   const saveReschedule = async (id: string) => {
@@ -182,33 +199,57 @@ export default function ScheduledPage() {
     const { hours, minutes } = parse12hTime(editTime)
     const scheduledDateTime = setMinutes(setHours(editDate, hours), minutes)
 
-    // 20-minute buffer validation
-    const minScheduleTime = new Date()
-    minScheduleTime.setMinutes(minScheduleTime.getMinutes() + 20)
+    // Find the event to check if it's already in SocialBu
+    const event = events.find(e => e.id === id)
     
-    if (scheduledDateTime < minScheduleTime) {
-      alert('Posts must be scheduled at least 20 minutes in the future')
-      return
-    }
-
-    const res = await fetch('/api/events', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id,
-        updates: { scheduled_for: scheduledDateTime.toISOString() },
-      }),
-    })
-
-    if (res.ok) {
-      setEvents((prev) =>
-        prev.map((e) =>
-          e.id === id ? { ...e, scheduled_for: scheduledDateTime.toISOString() } : e
-        ).sort((a, b) => 
-          new Date(a.scheduled_for || 0).getTime() - new Date(b.scheduled_for || 0).getTime()
-        )
+    // Update UI state immediately (optimistic update)
+    setEvents((prev) =>
+      prev.map((e) =>
+        e.id === id ? { ...e, scheduled_for: scheduledDateTime.toISOString() } : e
+      ).sort((a, b) => 
+        new Date(a.scheduled_for || 0).getTime() - new Date(b.scheduled_for || 0).getTime()
       )
-      cancelEditing()
+    )
+    cancelEditing()
+
+    try {
+      // Update local database
+      const localRes = await fetch('/api/events', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id,
+          updates: { scheduled_for: scheduledDateTime.toISOString() },
+        }),
+      })
+
+      if (!localRes.ok) {
+        throw new Error('Failed to update local database')
+      }
+
+      // If event is already scheduled in SocialBu, update it there too
+      if (event?.socialbu_post_id) {
+        const socialBuRes = await fetch('/api/socialbu-update', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventId: id,
+            scheduledFor: scheduledDateTime.toISOString(),
+          }),
+        })
+
+        const socialBuData = await socialBuRes.json()
+        
+        if (!socialBuData.success) {
+          console.error('Failed to update SocialBu:', socialBuData.error)
+          alert(`Warning: Updated locally but failed to sync with SocialBu: ${socialBuData.error}`)
+        }
+      }
+    } catch (error) {
+      console.error('Failed to save reschedule:', error)
+      alert('Failed to save changes. Please try again.')
+      // Revert optimistic update
+      await fetchEvents()
     }
   }
 
@@ -419,14 +460,10 @@ export default function ScheduledPage() {
                         </PopoverContent>
                       </Popover>
 
-                      <Input
-                        type="text"
-                        value={editTimeRaw || editTime}
-                        onChange={(e) => setEditTimeRaw(e.target.value)}
-                        onBlur={handleTimeBlur}
-                        onFocus={() => setEditTimeRaw('')}
-                        placeholder="1430"
-                        className="w-[90px] bg-zinc-800 border-zinc-700 h-8 text-sm"
+                      <TimeInput
+                        value={editTime}
+                        onChange={setEditTime}
+                        minMinutesFromNow={20}
                       />
 
                       <Button size="sm" onClick={() => saveReschedule(event.id)} className="bg-violet-600 hover:bg-violet-500">

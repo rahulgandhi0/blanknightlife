@@ -108,15 +108,14 @@ export default function AccountsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-3 flex-shrink-0">
-                <Badge 
-                  variant="outline" 
-                  className={account.is_active 
-                    ? "border-green-800 text-green-400 bg-green-950/20" 
-                    : "border-zinc-700 text-zinc-500"
-                  }
-                >
-                  {account.is_active ? 'Active' : 'Inactive'}
-                </Badge>
+                {account.is_active && (
+                  <Badge 
+                    variant="outline" 
+                    className="border-green-800 text-green-400 bg-green-950/20"
+                  >
+                    Active
+                  </Badge>
+                )}
                 <code className="text-xs font-mono text-violet-400 bg-zinc-900 px-2 py-1 rounded">
                   {account.id}
                 </code>

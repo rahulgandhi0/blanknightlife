@@ -243,6 +243,11 @@ CREATE INDEX idx_scrape_automations_profile_id ON scrape_automations(profile_id)
 CREATE INDEX idx_scrape_automations_active ON scrape_automations(is_active) WHERE is_active = true;
 CREATE INDEX idx_scrape_automations_next_run ON scrape_automations(next_run_at) WHERE is_active = true;
 
+-- Unique constraint to prevent duplicate automations per account
+ALTER TABLE scrape_automations 
+ADD CONSTRAINT unique_profile_account 
+UNIQUE (profile_id, account_handle);
+
 CREATE TRIGGER update_scrape_automations_updated_at
   BEFORE UPDATE ON scrape_automations
   FOR EACH ROW

@@ -8,8 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 
-const FIXED_FREQUENCY_HOURS = 36
-const FIXED_LOOKBACK_DAYS = 3
+const DEFAULT_FREQUENCY_HOURS = 36
+const DEFAULT_LOOKBACK_DAYS = 3
 
 // Calculate next run time based on frequency_hours
 function calculateNextRun(
@@ -48,7 +48,7 @@ function resolveBaseUrl(request: NextRequest): string {
   }
 }
 
-async function triggerImmediateScrape(baseUrl: string, account: string, profileId: string) {
+async function triggerImmediateScrape(baseUrl: string, account: string, profileId: string, daysBack: number) {
   if (!baseUrl || !profileId) return
   try {
     await fetch(`${baseUrl}/api/apify-trigger`, {
@@ -56,7 +56,7 @@ async function triggerImmediateScrape(baseUrl: string, account: string, profileI
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         account,
-        sinceHours: FIXED_FREQUENCY_HOURS,
+        sinceHours: daysBack * 24,
         profile_id: profileId,
       }),
     })
@@ -98,6 +98,8 @@ export async function POST(request: NextRequest) {
       account_handle,
       run_at_hour = 9,
       run_at_minute = 0,
+      frequency_hours = DEFAULT_FREQUENCY_HOURS,
+      days_back = DEFAULT_LOOKBACK_DAYS,
       is_active = true,
     } = body
 
@@ -109,9 +111,25 @@ export async function POST(request: NextRequest) {
     }
 
     const cleanHandle = account_handle.trim().replace(/^@/, '')
-    const nextRunAt = calculateNextRun(FIXED_FREQUENCY_HOURS, run_at_hour, run_at_minute)
-
+    
     const supabase = await createClient()
+    
+    // Check for duplicate (profile_id, account_handle)
+    const { data: existing } = await supabase
+      .from('scrape_automations')
+      .select('id')
+      .eq('profile_id', profile_id)
+      .eq('account_handle', cleanHandle)
+      .single()
+
+    if (existing) {
+      return NextResponse.json(
+        { error: `Automation for @${cleanHandle} already exists` },
+        { status: 409 }
+      )
+    }
+
+    const nextRunAt = calculateNextRun(frequency_hours, run_at_hour, run_at_minute)
     
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { data, error } = await (supabase as any)
@@ -119,8 +137,8 @@ export async function POST(request: NextRequest) {
       .insert({
         profile_id,
         account_handle: cleanHandle,
-        days_back: FIXED_LOOKBACK_DAYS,
-        frequency_hours: FIXED_FREQUENCY_HOURS,
+        days_back,
+        frequency_hours,
         run_at_hour,
         run_at_minute,
         is_active,
@@ -134,7 +152,7 @@ export async function POST(request: NextRequest) {
     }
 
     const baseUrl = resolveBaseUrl(request)
-    void triggerImmediateScrape(baseUrl, cleanHandle, profile_id)
+    void triggerImmediateScrape(baseUrl, cleanHandle, profile_id, days_back)
 
     return NextResponse.json({ success: true, automation: data })
   } catch (error) {
@@ -180,6 +198,32 @@ export async function PATCH(request: NextRequest) {
     // Clean handle if provided
     if (updates.account_handle) {
       updates.account_handle = updates.account_handle.trim().replace(/^@/, '')
+      
+      // Check for duplicate if changing account_handle
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { data: current } = await (supabase as any)
+        .from('scrape_automations')
+        .select('profile_id')
+        .eq('id', id)
+        .single()
+
+      if (current && current.profile_id) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const { data: duplicate } = await (supabase as any)
+          .from('scrape_automations')
+          .select('id')
+          .eq('profile_id', current.profile_id)
+          .eq('account_handle', updates.account_handle)
+          .neq('id', id)
+          .single()
+
+        if (duplicate) {
+          return NextResponse.json(
+            { error: `Automation for @${updates.account_handle} already exists` },
+            { status: 409 }
+          )
+        }
+      }
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

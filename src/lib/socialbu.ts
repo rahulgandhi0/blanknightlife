@@ -323,6 +323,56 @@ export class SocialBuClient {
   }
 
   /**
+   * 7. GET POST BY ID - Fetch a single post
+   * GET /api/v1/posts/{postId}
+   */
+  async getPost(postId: number | string): Promise<SocialBuPost> {
+    const response = await fetch(`${this.baseUrl}/posts/${postId}`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch post: ${response.statusText}`);
+    }
+
+    return await response.json();
+  }
+
+  /**
+   * 8. UPDATE POST - Update post content or schedule time
+   * PATCH /api/v1/posts/{postId}
+   */
+  async updatePost(
+    postId: number | string,
+    updates: {
+      content?: string;
+      publish_at?: string; // Format: YYYY-MM-DD HH:MM:SS (UTC)
+      accounts?: number[];
+    }
+  ): Promise<{ success: boolean; message?: string }> {
+    const response = await fetch(`${this.baseUrl}/posts/${postId}`, {
+      method: 'PATCH',
+      headers: this.getHeaders(),
+      body: JSON.stringify(updates),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: data.message || 'Failed to update post',
+      };
+    }
+
+    return {
+      success: true,
+      message: data.message || 'Post updated successfully',
+    };
+  }
+
+  /**
    * CONVENIENCE METHOD: Schedule a post with media
    * Handles the complete flow: upload media → create post
    */
@@ -333,13 +383,13 @@ export class SocialBuClient {
     scheduledAt: Date,
     postbackUrl?: string
   ): Promise<CreatePostResponse> {
-    // Upload all media files and get tokens
-    const uploadTokens: Array<{ upload_token: string }> = [];
-    
-    for (const mediaUrl of mediaUrls) {
-      const token = await this.uploadMediaFromUrl(mediaUrl);
-      uploadTokens.push({ upload_token: token });
-    }
+    // Upload all media files in parallel and get tokens
+    const uploadTokens = await Promise.all(
+      mediaUrls.map(async (mediaUrl) => {
+        const token = await this.uploadMediaFromUrl(mediaUrl);
+        return { upload_token: token };
+      })
+    );
 
     // Format date as YYYY-MM-DD HH:MM:SS (UTC)
     const publish_at = scheduledAt.toISOString().slice(0, 19).replace('T', ' ');

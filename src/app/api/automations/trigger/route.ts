@@ -45,9 +45,12 @@ export async function GET(request: NextRequest) {
   const secret = searchParams.get('secret')
   const forceId = searchParams.get('force_id')
 
-  // Optional: Verify secret for security
+  // Verify secret for security
   const expectedSecret = process.env.CRON_SECRET
-  if (expectedSecret && secret !== expectedSecret) {
+  if (!expectedSecret) {
+    return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 })
+  }
+  if (secret !== expectedSecret) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

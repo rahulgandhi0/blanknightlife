@@ -1,16 +1,18 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, memo } from 'react'
 import Image from 'next/image'
 import { format, setHours, setMinutes } from 'date-fns'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
 import { Calendar } from '@/components/ui/calendar'
+import { TimeInput } from '@/components/ui/time-input'
+import { MediaViewerModal } from '@/components/ui/media-viewer-modal'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Calendar as CalendarIcon, Check, X, Sparkles, Clock, Wand2, Loader2, Film, Images } from 'lucide-react'
+import { Calendar as CalendarIcon, Check, X, Sparkles, Wand2, Loader2, Film, Images } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { EventDiscovery } from '@/types/database'
 
@@ -19,35 +21,6 @@ interface EventCardProps {
   onApprove: (id: string, caption: string, scheduledFor: Date) => Promise<void>
   onDiscard: (id: string) => Promise<void>
   onUpdate?: (id: string, updates: Partial<EventDiscovery>) => Promise<void>
-}
-
-// Convert 24h time string to 12h format
-function formatTo12h(input: string): string {
-  const digits = input.replace(/\D/g, '')
-  if (digits.length === 0) return '12:00 PM'
-  
-  let hours: number
-  let minutes: number
-  
-  if (digits.length <= 2) {
-    hours = parseInt(digits, 10)
-    minutes = 0
-  } else if (digits.length === 3) {
-    hours = parseInt(digits.slice(0, 1), 10)
-    minutes = parseInt(digits.slice(1), 10)
-  } else {
-    hours = parseInt(digits.slice(0, 2), 10)
-    minutes = parseInt(digits.slice(2, 4), 10)
-  }
-  
-  hours = Math.min(Math.max(hours, 0), 23)
-  minutes = Math.min(Math.max(minutes, 0), 59)
-  
-  const meridiem = hours >= 12 ? 'PM' : 'AM'
-  let displayHours = hours % 12
-  if (displayHours === 0) displayHours = 12
-  
-  return `${displayHours}:${minutes.toString().padStart(2, '0')} ${meridiem}`
 }
 
 function parse12hTime(timeStr: string): { hours: number; minutes: number } {
@@ -64,22 +37,22 @@ function parse12hTime(timeStr: string): { hours: number; minutes: number } {
   return { hours, minutes }
 }
 
-export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
+export const EventCard = memo(function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   const [caption, setCaption] = useState(event.final_caption || event.ai_generated_caption || '')
   const [context, setContext] = useState('')
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
     event.scheduled_for ? new Date(event.scheduled_for) : undefined
   )
-  const [timeDisplay, setTimeDisplay] = useState<string>(
+  const [timeValue, setTimeValue] = useState<string>(
     event.scheduled_for
-      ? format(new Date(event.scheduled_for), 'h:mm a')
+      ? format(new Date(event.scheduled_for), 'h:mm a').toUpperCase()
       : '12:00 PM'
   )
-  const [timeRaw, setTimeRaw] = useState('')
   const [calendarOpen, setCalendarOpen] = useState(false)
   const [currentImageIndex, setCurrentImageIndex] = useState(0)
   const [isLoading, setIsLoading] = useState(false)
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isMediaViewerOpen, setIsMediaViewerOpen] = useState(false)
   const [captionStats, setCaptionStats] = useState<{
     minRecommended: number
     maxRecommended: number
@@ -109,21 +82,6 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
         ? 'text-amber-400' 
         : 'text-red-400'
 
-  const handleTimeChange = (value: string) => setTimeRaw(value)
-
-  const handleTimeBlur = () => {
-    if (timeRaw.trim()) {
-      setTimeDisplay(formatTo12h(timeRaw))
-    }
-    setTimeRaw('')
-  }
-
-  const handleTimeKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleTimeBlur()
-      ;(e.target as HTMLInputElement).blur()
-    }
-  }
 
   const handleGenerateCaption = async () => {
     setIsGenerating(true)
@@ -159,17 +117,8 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
       return
     }
     
-    const { hours, minutes } = parse12hTime(timeDisplay)
+    const { hours, minutes } = parse12hTime(timeValue)
     const scheduledDateTime = setMinutes(setHours(selectedDate, hours), minutes)
-    
-    // 20-minute buffer validation
-    const minScheduleTime = new Date()
-    minScheduleTime.setMinutes(minScheduleTime.getMinutes() + 20)
-    
-    if (scheduledDateTime < minScheduleTime) {
-      alert('Posts must be scheduled at least 20 minutes in the future')
-      return
-    }
     
     setIsLoading(true)
     try {
@@ -205,23 +154,44 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
   }
 
   return (
-    <Card className="border border-zinc-800 bg-zinc-950 hover:border-zinc-700 transition-colors h-full">
-      <div className="grid grid-cols-[120px_1fr_200px] gap-3 p-3 items-stretch">
-        <div className="relative w-full h-[160px] rounded-md overflow-hidden bg-black">
-          {mediaUrls.length > 0 ? (
-            <Image
-              src={mediaUrls[0]}
-              alt={`Post from @${event.source_account}`}
-              fill
-              className="object-cover"
-              unoptimized
-            />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-zinc-600 text-xs">
-              No image
-            </div>
-          )}
-        </div>
+    <>
+      <Card className="border border-zinc-800 bg-zinc-950 hover:border-zinc-700 transition-colors h-full">
+        <div className="grid grid-cols-[120px_1fr_200px] gap-3 p-3 items-stretch">
+          <div 
+            className="relative w-full h-[160px] rounded-md overflow-hidden bg-black cursor-pointer group"
+            onClick={() => mediaUrls.length > 0 && setIsMediaViewerOpen(true)}
+          >
+            {mediaUrls.length > 0 ? (
+              <>
+                <Image
+                  src={mediaUrls[0]}
+                  alt={`Post from @${event.source_account}`}
+                  fill
+                  className="object-cover transition-transform duration-150 group-hover:scale-105"
+                  unoptimized
+                  loading="lazy"
+                  sizes="120px"
+                />
+                {/* Hover overlay */}
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-150 flex items-center justify-center">
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 text-white text-xs font-medium bg-black/60 px-3 py-1.5 rounded-full">
+                    View
+                  </div>
+                </div>
+                {/* Multiple images indicator */}
+                {hasMultipleImages && (
+                  <div className="absolute top-2 right-2 bg-black/70 text-white text-xs px-2 py-1 rounded-full flex items-center gap-1">
+                    <Images className="h-3 w-3" />
+                    {mediaUrls.length}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="absolute inset-0 flex items-center justify-center text-zinc-600 text-xs">
+                No image
+              </div>
+            )}
+          </div>
 
         <div className="flex flex-col gap-2 h-full">
           <div className="flex items-center gap-2 text-[11px] text-zinc-500">
@@ -325,19 +295,11 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
             </PopoverContent>
           </Popover>
 
-          <div className="relative">
-            <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400" />
-            <Input
-              type="text"
-              value={timeRaw || timeDisplay}
-              onChange={(e) => handleTimeChange(e.target.value)}
-              onBlur={handleTimeBlur}
-              onKeyDown={handleTimeKeyDown}
-              onFocus={() => setTimeRaw('')}
-              placeholder="1430"
-              className="w-full bg-zinc-900 border border-zinc-800 h-9 text-sm pl-10 focus:border-violet-500/60 focus:ring-0"
-            />
-          </div>
+          <TimeInput
+            value={timeValue}
+            onChange={setTimeValue}
+            minMinutesFromNow={20}
+          />
 
           <Button
             onClick={handleApprove}
@@ -362,5 +324,14 @@ export function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
         </div>
       </div>
     </Card>
+
+    <MediaViewerModal
+      isOpen={isMediaViewerOpen}
+      onClose={() => setIsMediaViewerOpen(false)}
+      mediaUrls={mediaUrls}
+      initialIndex={0}
+      isReel={event.post_type === 'reel'}
+    />
+  </>
   )
-}
+})
