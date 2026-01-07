@@ -113,14 +113,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    console.log('SocialBu response:', result);
+    console.log('Post ID from SocialBu:', result.post_id, 'Type:', typeof result.post_id);
+
     // Update event status to 'scheduled' and store SocialBu post ID
+    const numericPostId = result.post_id ? (typeof result.post_id === 'number' ? result.post_id : parseInt(result.post_id)) : null;
+    
+    console.log('Saving to DB:', {
+      meta_post_id: String(result.post_id),
+      socialbu_post_id: numericPostId,
+    });
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: updateError } = await (supabase as any)
       .from('event_discovery')
       .update({
         status: 'scheduled',
         meta_post_id: String(result.post_id), // Store as string
-        socialbu_post_id: result.post_id ? (typeof result.post_id === 'number' ? result.post_id : parseInt(result.post_id)) : null,
+        socialbu_post_id: numericPostId,
         updated_at: new Date().toISOString(),
       })
       .eq('id', eventId);
@@ -128,6 +138,8 @@ export async function POST(request: NextRequest) {
     if (updateError) {
       console.error('Failed to update event status:', updateError);
       // Don't fail the request - post is already scheduled in SocialBu
+    } else {
+      console.log('✅ Successfully saved post IDs to database');
     }
 
     return NextResponse.json({

@@ -36,12 +36,32 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    console.log('Event from DB:', {
+      id: event.id,
+      socialbu_post_id: event.socialbu_post_id,
+      meta_post_id: event.meta_post_id,
+      status: event.status,
+    });
+
     // Check if event has a SocialBu post ID (check both fields)
     const socialBuId = event.socialbu_post_id || (event.meta_post_id ? parseInt(event.meta_post_id) : null);
     
-    if (!socialBuId) {
+    console.log('Resolved SocialBu ID:', socialBuId);
+    
+    if (!socialBuId || isNaN(socialBuId)) {
+      console.error('❌ No valid SocialBu ID found:', { 
+        socialbu_post_id: event.socialbu_post_id, 
+        meta_post_id: event.meta_post_id 
+      });
       return NextResponse.json(
-        { success: false, error: 'Event is not linked to a SocialBu post' },
+        { 
+          success: false, 
+          error: 'Event is not linked to a SocialBu post',
+          debug: {
+            socialbu_post_id: event.socialbu_post_id,
+            meta_post_id: event.meta_post_id,
+          }
+        },
         { status: 400 }
       );
     }
