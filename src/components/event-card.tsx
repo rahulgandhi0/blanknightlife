@@ -21,6 +21,7 @@ interface EventCardProps {
   onApprove: (id: string, caption: string, scheduledFor: Date) => Promise<void>
   onDiscard: (id: string) => Promise<void>
   onUpdate?: (id: string, updates: Partial<EventDiscovery>) => Promise<void>
+  disabled?: boolean
 }
 
 function parse12hTime(timeStr: string): { hours: number; minutes: number } {
@@ -37,7 +38,7 @@ function parse12hTime(timeStr: string): { hours: number; minutes: number } {
   return { hours, minutes }
 }
 
-export const EventCard = memo(function EventCard({ event, onApprove, onDiscard }: EventCardProps) {
+export const EventCard = memo(function EventCard({ event, onApprove, onDiscard, disabled = false }: EventCardProps) {
   const [caption, setCaption] = useState(event.final_caption || event.ai_generated_caption || '')
   const [context, setContext] = useState('')
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(
@@ -303,14 +304,19 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard }
 
           <Button
             onClick={handleApprove}
-            disabled={isLoading || !selectedDate || !caption.trim()}
+            disabled={isLoading || disabled || !selectedDate || !caption.trim()}
             size="sm"
-            className="w-full h-9 text-sm font-semibold bg-violet-600 hover:bg-violet-500"
+            className="w-full h-9 text-sm font-semibold bg-violet-600 hover:bg-violet-500 disabled:opacity-50"
           >
             {isLoading ? (
               <>
                 <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                 Sending...
+              </>
+            ) : disabled ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Processing...
               </>
             ) : (
               <>
@@ -322,10 +328,10 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard }
           
           <Button
             onClick={handleDiscard}
-            disabled={isLoading}
+            disabled={isLoading || disabled}
             size="sm"
             variant="outline"
-            className="w-full h-9 text-sm border border-zinc-800 text-red-400 hover:border-red-500 hover:text-red-300"
+            className="w-full h-9 text-sm border border-zinc-800 text-red-400 hover:border-red-500 hover:text-red-300 disabled:opacity-50"
           >
             <X className="h-4 w-4 mr-2" />
             Discard

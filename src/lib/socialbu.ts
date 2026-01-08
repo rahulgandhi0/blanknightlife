@@ -373,6 +373,31 @@ export class SocialBuClient {
   }
 
   /**
+   * 9. DELETE POST - Delete a scheduled post
+   * DELETE /api/v1/posts/{postId}
+   */
+  async deletePost(postId: number | string): Promise<{ success: boolean; message?: string }> {
+    const response = await fetch(`${this.baseUrl}/posts/${postId}`, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        message: data.message || 'Failed to delete post',
+      };
+    }
+
+    return {
+      success: true,
+      message: data.message || 'Post deleted successfully',
+    };
+  }
+
+  /**
    * CONVENIENCE METHOD: Schedule a post with media
    * Handles the complete flow: upload media → create post
    */

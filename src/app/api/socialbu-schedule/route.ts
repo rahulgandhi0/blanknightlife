@@ -158,17 +158,24 @@ export async function POST(request: NextRequest) {
         console.error('Event ID:', eventId);
         console.error('Database error:', updateError);
         
-        // This is a critical state - post is scheduled in SocialBu but not tracked locally
-        // Log this for manual intervention
+        // SAFETY: Delete the post from SocialBu to prevent orphaned posts
+        console.log('🔄 Attempting to rollback: Deleting post from SocialBu...');
+        try {
+          const deleteResult = await client.deletePost(socialBuPostId!);
+          if (deleteResult.success) {
+            console.log('✅ Successfully rolled back: Post deleted from SocialBu');
+          } else {
+            console.error('❌ Rollback failed: Could not delete post from SocialBu:', deleteResult.message);
+          }
+        } catch (deleteError) {
+          console.error('❌ Rollback exception:', deleteError);
+        }
+        
         return NextResponse.json(
           {
             success: false,
-            error: 'Post scheduled in SocialBu but failed to update local database',
-            critical: true,
-            socialbu_post_id: socialBuPostId,
-            event_id: eventId,
+            error: 'Failed to save post to database. Post was not scheduled (rolled back).',
             details: updateError.message || String(updateError),
-            action_required: 'Manual intervention needed: Post is live in SocialBu but not tracked locally',
           },
           { status: 500 }
         );
@@ -182,15 +189,24 @@ export async function POST(request: NextRequest) {
       console.error('Event ID:', eventId);
       console.error('Exception:', dbError);
       
+      // SAFETY: Delete the post from SocialBu to prevent orphaned posts
+      console.log('🔄 Attempting to rollback: Deleting post from SocialBu...');
+      try {
+        const deleteResult = await client.deletePost(socialBuPostId!);
+        if (deleteResult.success) {
+          console.log('✅ Successfully rolled back: Post deleted from SocialBu');
+        } else {
+          console.error('❌ Rollback failed: Could not delete post from SocialBu:', deleteResult.message);
+        }
+      } catch (deleteError) {
+        console.error('❌ Rollback exception:', deleteError);
+      }
+      
       return NextResponse.json(
         {
           success: false,
-          error: 'Post scheduled in SocialBu but database update threw exception',
-          critical: true,
-          socialbu_post_id: socialBuPostId,
-          event_id: eventId,
+          error: 'Database error occurred. Post was not scheduled (rolled back).',
           details: dbError instanceof Error ? dbError.message : String(dbError),
-          action_required: 'Manual intervention needed: Post is live in SocialBu but not tracked locally',
         },
         { status: 500 }
       );

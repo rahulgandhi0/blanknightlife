@@ -155,49 +155,24 @@ export default function ScheduledPage() {
   const handleRefresh = async () => {
     setSyncing(true)
     try {
-      // Push all scheduled events from UI to SocialBu
-      const scheduledEvents = events.filter(e => 
-        (e.socialbu_post_id || e.meta_post_id) && 
-        e.status === 'scheduled' &&
-        e.scheduled_for
-      )
+      // Use the bulk sync API to check for posted posts
+      const syncedCount = await syncWithSocialBu(true)
       
-      if (scheduledEvents.length === 0) {
-        setSyncResult({ synced: 0, message: 'No posts to sync' })
-        setTimeout(() => setSyncResult(null), 2000)
-        setSyncing(false)
-        return
-      }
-
-      console.log(`Pushing ${scheduledEvents.length} schedule(s) to SocialBu...`)
-      
-      const results = await Promise.allSettled(
-        scheduledEvents.map(async (event) => {
-          const res = await fetch('/api/socialbu-update', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              eventId: event.id,
-              scheduledFor: event.scheduled_for,
-            }),
-          })
-          const data = await res.json()
-          return data.success
-        })
-      )
-      
-      const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length
-      console.log(`✅ Pushed ${successCount}/${scheduledEvents.length} schedules to SocialBu`)
-      
-      setSyncResult({ 
-        synced: successCount, 
-        message: `Synced ${successCount}/${scheduledEvents.length} posts to SocialBu` 
-      })
-      setTimeout(() => setSyncResult(null), 3000)
-      
-      // Also check for any past posts that should be marked as posted
-      await syncWithSocialBu(true)
+      // Refresh the events list
       await fetchEvents()
+      
+      if (syncedCount > 0) {
+        setSyncResult({ 
+          synced: syncedCount, 
+          message: `Marked ${syncedCount} post${syncedCount !== 1 ? 's' : ''} as posted` 
+        })
+      } else {
+        setSyncResult({ 
+          synced: 0, 
+          message: 'All posts are up to date' 
+        })
+      }
+      setTimeout(() => setSyncResult(null), 3000)
     } catch (error) {
       console.error('Sync failed:', error)
       setSyncResult({ synced: 0, message: 'Sync failed' })

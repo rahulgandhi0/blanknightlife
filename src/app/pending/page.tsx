@@ -16,6 +16,7 @@ export default function PendingPage() {
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [filter, setFilter] = useState<FilterType>('all')
+  const [processingId, setProcessingId] = useState<string | null>(null)
 
   const fetchEvents = useCallback(async () => {
     if (!profileId) return
@@ -41,50 +42,62 @@ export default function PendingPage() {
   }
 
   const handleApprove = async (id: string, caption: string, scheduledFor: Date) => {
-    // Remove from pending list immediately (optimistic UI)
-    setEvents((prev) => prev.filter((e) => e.id !== id))
-
-    // First, update the event with approved status and caption
-    const updateRes = await fetch('/api/events', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        id,
-        updates: {
-          status: 'approved',
-          final_caption: caption,
-          scheduled_for: scheduledFor.toISOString(),
-        },
-      }),
-    })
-
-    if (!updateRes.ok) {
-      alert('Failed to approve event')
-      // Restore the event on error
-      await fetchEvents()
+    // Prevent multiple simultaneous approvals
+    if (processingId) {
+      console.log('Another post is being processed, please wait...')
       return
     }
 
-    // Then, schedule to SocialBu using the profile's linked account
-    if (currentProfile?.socialbu_account_id) {
-      const scheduleRes = await fetch('/api/socialbu-schedule', {
-        method: 'POST',
+    setProcessingId(id)
+
+    // Remove from pending list immediately (optimistic UI)
+    setEvents((prev) => prev.filter((e) => e.id !== id))
+
+    try {
+      // First, update the event with approved status and caption
+      const updateRes = await fetch('/api/events', {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          eventId: id,
-          accountIds: [currentProfile.socialbu_account_id],
+          id,
+          updates: {
+            status: 'approved',
+            final_caption: caption,
+            scheduled_for: scheduledFor.toISOString(),
+          },
         }),
       })
 
-      const scheduleData = await scheduleRes.json()
-      
-      if (!scheduleData.success) {
-        console.error('Failed to schedule to SocialBu:', scheduleData.error)
-        alert(`Post approved but failed to schedule: ${scheduleData.error}. You can reschedule later.`)
+      if (!updateRes.ok) {
+        alert('Failed to approve event')
+        // Restore the event on error
+        await fetchEvents()
         return
       }
-    } else {
-      console.warn('No SocialBu account linked to profile. Event approved but not scheduled.')
+
+      // Then, schedule to SocialBu using the profile's linked account
+      if (currentProfile?.socialbu_account_id) {
+        const scheduleRes = await fetch('/api/socialbu-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            eventId: id,
+            accountIds: [currentProfile.socialbu_account_id],
+          }),
+        })
+
+        const scheduleData = await scheduleRes.json()
+        
+        if (!scheduleData.success) {
+          console.error('Failed to schedule to SocialBu:', scheduleData.error)
+          alert(`Post approved but failed to schedule: ${scheduleData.error}. You can reschedule later.`)
+          return
+        }
+      } else {
+        console.warn('No SocialBu account linked to profile. Event approved but not scheduled.')
+      }
+    } finally {
+      setProcessingId(null)
     }
   }
 
@@ -217,6 +230,7 @@ export default function PendingPage() {
               event={event}
               onApprove={handleApprove}
               onDiscard={handleDiscard}
+              disabled={processingId !== null && processingId !== event.id}
             />
           ))}
         </div>
