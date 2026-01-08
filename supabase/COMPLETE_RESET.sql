@@ -1,11 +1,17 @@
 -- ============================================================================
--- FRESH DATABASE RESET
+-- BLANKNIGHTLIFE - COMPLETE DATABASE RESET
 -- ============================================================================
 -- Complete database wipe and rebuild from scratch
 -- ⚠️  WARNING: This will DELETE ALL DATA ⚠️
+--
+-- This script creates a fresh database with all tables, indexes, and 
+-- configurations needed for the BlankNightLife application.
+--
+-- To execute: Copy and paste this entire script into Supabase SQL Editor
+-- ============================================================================
 
 -- ============================================================================
--- STEP 1: DROP EVERYTHING
+-- STEP 1: DROP EVERYTHING (Clean Slate)
 -- ============================================================================
 
 -- Drop all triggers
@@ -58,7 +64,7 @@ EXCEPTION WHEN OTHERS THEN NULL;
 END $$;
 
 -- ============================================================================
--- STEP 2: CREATE STORAGE
+-- STEP 2: CREATE STORAGE BUCKET
 -- ============================================================================
 
 INSERT INTO storage.buckets (id, name, public)
@@ -93,8 +99,10 @@ $$ LANGUAGE plpgsql;
 -- STEP 4: CREATE TABLES
 -- ============================================================================
 
+-- -----------------------------------------------------------------------------
 -- PROFILES TABLE
 -- Each profile represents a social media account (linked to SocialBu)
+-- -----------------------------------------------------------------------------
 CREATE TABLE profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name TEXT NOT NULL,
@@ -115,31 +123,54 @@ CREATE TRIGGER update_profiles_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+COMMENT ON TABLE profiles IS 'Social media profiles/accounts managed by the app';
+COMMENT ON COLUMN profiles.socialbu_account_id IS 'Links to SocialBu account ID for publishing';
+
+-- -----------------------------------------------------------------------------
 -- EVENT DISCOVERY TABLE
 -- Stores Instagram posts that have been scraped and processed
+-- -----------------------------------------------------------------------------
 CREATE TABLE event_discovery (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  
+  -- Post status and metadata
   status TEXT NOT NULL DEFAULT 'pending',
   source_account TEXT NOT NULL,
   post_type TEXT NOT NULL DEFAULT 'image',
+  
+  -- Captions (original → AI → final)
   original_caption TEXT,
   ai_generated_caption TEXT,
   final_caption TEXT,
+  
+  -- Media
   media_urls TEXT[] NOT NULL,
   ig_post_id TEXT NOT NULL UNIQUE,
   is_pinned BOOLEAN DEFAULT false,
+  
+  -- Timestamps
   posted_at_source TIMESTAMPTZ,
   scheduled_for TIMESTAMPTZ,
   posted_at TIMESTAMPTZ,
+  
+  -- SocialBu integration
   meta_post_id TEXT,
   socialbu_post_id BIGINT,
   socialbu_account_ids BIGINT[],
+  
+  -- Engagement metrics
   engagement_likes INTEGER,
   engagement_comments INTEGER,
   engagement_shares INTEGER,
+  
+  -- Metadata
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  -- Constraints
+  CONSTRAINT valid_status CHECK (status IN ('pending', 'approved', 'scheduled', 'posted', 'archived', 'discarded')),
+  CONSTRAINT valid_post_type CHECK (post_type IN ('image', 'carousel', 'reel'))
 );
 
 CREATE INDEX idx_event_discovery_profile_id ON event_discovery(profile_id);
@@ -147,14 +178,21 @@ CREATE INDEX idx_event_discovery_status ON event_discovery(status);
 CREATE INDEX idx_event_discovery_profile_status ON event_discovery(profile_id, status);
 CREATE INDEX idx_event_discovery_ig_post_id ON event_discovery(ig_post_id);
 CREATE INDEX idx_event_discovery_source_account ON event_discovery(source_account);
+CREATE INDEX idx_event_discovery_scheduled_for ON event_discovery(scheduled_for) WHERE scheduled_for IS NOT NULL;
 
 CREATE TRIGGER update_event_discovery_updated_at
   BEFORE UPDATE ON event_discovery
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+COMMENT ON TABLE event_discovery IS 'Instagram posts scraped from source accounts';
+COMMENT ON COLUMN event_discovery.status IS 'Workflow status: pending → approved → scheduled → posted';
+COMMENT ON COLUMN event_discovery.post_type IS 'Type of Instagram post: image, carousel, or reel';
+
+-- -----------------------------------------------------------------------------
 -- SOCIAL ACCOUNTS TABLE
 -- Stores social media accounts from SocialBu
+-- -----------------------------------------------------------------------------
 CREATE TABLE social_accounts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
@@ -173,14 +211,19 @@ CREATE TABLE social_accounts (
 
 CREATE INDEX idx_social_accounts_socialbu_id ON social_accounts(socialbu_account_id);
 CREATE INDEX idx_social_accounts_profile_id ON social_accounts(profile_id);
+CREATE INDEX idx_social_accounts_platform ON social_accounts(platform);
 
 CREATE TRIGGER update_social_accounts_updated_at
   BEFORE UPDATE ON social_accounts
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+COMMENT ON TABLE social_accounts IS 'Social media accounts synced from SocialBu';
+
+-- -----------------------------------------------------------------------------
 -- CAPTION EDITS TABLE
--- Tracks caption edit history
+-- Tracks caption edit history for reinforcement learning
+-- -----------------------------------------------------------------------------
 CREATE TABLE caption_edits (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   event_id UUID NOT NULL REFERENCES event_discovery(id) ON DELETE CASCADE,
@@ -191,9 +234,14 @@ CREATE TABLE caption_edits (
 );
 
 CREATE INDEX idx_caption_edits_event_id ON caption_edits(event_id);
+CREATE INDEX idx_caption_edits_created_at ON caption_edits(created_at DESC);
 
+COMMENT ON TABLE caption_edits IS 'Caption edit history for AI learning and tracking';
+
+-- -----------------------------------------------------------------------------
 -- SCRAPE HISTORY TABLE
 -- Logs all scrape operations (manual and automated)
+-- -----------------------------------------------------------------------------
 CREATE TABLE scrape_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
@@ -202,15 +250,21 @@ CREATE TABLE scrape_history (
   posts_ingested INTEGER DEFAULT 0,
   status TEXT DEFAULT 'success',
   error_message TEXT,
-  created_at TIMESTAMPTZ DEFAULT NOW()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  CONSTRAINT valid_scrape_status CHECK (status IN ('success', 'partial', 'error'))
 );
 
 CREATE INDEX idx_scrape_history_profile_id ON scrape_history(profile_id);
 CREATE INDEX idx_scrape_history_created_at ON scrape_history(created_at DESC);
 CREATE INDEX idx_scrape_history_account ON scrape_history(account);
 
+COMMENT ON TABLE scrape_history IS 'Audit log of all scraping operations';
+
+-- -----------------------------------------------------------------------------
 -- SCRAPE AUTOMATIONS TABLE
 -- Manages automated scraping schedules
+-- -----------------------------------------------------------------------------
 CREATE TABLE scrape_automations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   profile_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
@@ -219,9 +273,9 @@ CREATE TABLE scrape_automations (
   account_handle TEXT NOT NULL,
   days_back INTEGER NOT NULL DEFAULT 3,
   
-  -- When to scrape (now uses frequency_hours instead of TEXT frequency)
+  -- When to scrape (frequency in hours)
   frequency TEXT DEFAULT 'daily',  -- Legacy field, kept for compatibility
-  frequency_hours INTEGER DEFAULT 36,  -- Actual frequency in hours
+  frequency_hours INTEGER DEFAULT 36,  -- Actual frequency in hours (e.g., 1, 6, 12, 24, 36, 48, 168)
   run_at_hour INTEGER DEFAULT 9,
   run_at_minute INTEGER DEFAULT 0,
   run_on_days INTEGER[] DEFAULT ARRAY[0,1,2,3,4,5,6],
@@ -236,26 +290,30 @@ CREATE TABLE scrape_automations (
   
   -- Metadata
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  
+  -- Constraints
+  CONSTRAINT valid_automation_status CHECK (last_run_status IS NULL OR last_run_status IN ('success', 'failed', 'running')),
+  CONSTRAINT unique_profile_account UNIQUE (profile_id, account_handle)
 );
 
 CREATE INDEX idx_scrape_automations_profile_id ON scrape_automations(profile_id);
 CREATE INDEX idx_scrape_automations_active ON scrape_automations(is_active) WHERE is_active = true;
 CREATE INDEX idx_scrape_automations_next_run ON scrape_automations(next_run_at) WHERE is_active = true;
 
--- Unique constraint to prevent duplicate automations per account
-ALTER TABLE scrape_automations 
-ADD CONSTRAINT unique_profile_account 
-UNIQUE (profile_id, account_handle);
-
 CREATE TRIGGER update_scrape_automations_updated_at
   BEFORE UPDATE ON scrape_automations
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+COMMENT ON TABLE scrape_automations IS 'Automated scraping schedules for Instagram accounts';
+COMMENT ON COLUMN scrape_automations.frequency_hours IS 'Hours between scrape runs (e.g., 1=hourly, 24=daily, 168=weekly)';
+COMMENT ON CONSTRAINT unique_profile_account ON scrape_automations IS 'Prevents duplicate automations per account';
+
 -- ============================================================================
 -- STEP 5: DISABLE RLS & GRANT PERMISSIONS
 -- ============================================================================
+-- Note: RLS is disabled for simplicity. Enable and configure policies for production.
 
 ALTER TABLE profiles DISABLE ROW LEVEL SECURITY;
 ALTER TABLE event_discovery DISABLE ROW LEVEL SECURITY;
@@ -275,9 +333,34 @@ GRANT USAGE ON SCHEMA public TO authenticated;
 GRANT USAGE ON SCHEMA public TO service_role;
 
 -- ============================================================================
--- DONE! ✅
+-- STEP 6: VERIFICATION
 -- ============================================================================
 
-SELECT 'Database reset complete! All tables recreated.' as status;
-SELECT tablename, schemaname FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename;
+SELECT 'Database reset complete! ✅' as status;
 
+SELECT 
+  tablename as "Table Name",
+  schemaname as "Schema"
+FROM pg_tables 
+WHERE schemaname = 'public' 
+ORDER BY tablename;
+
+SELECT 
+  table_name as "Table",
+  column_name as "Column",
+  data_type as "Type",
+  is_nullable as "Nullable"
+FROM information_schema.columns
+WHERE table_schema = 'public'
+ORDER BY table_name, ordinal_position;
+
+-- ============================================================================
+-- DONE! 🎉
+-- ============================================================================
+-- Your database is now ready for use with BlankNightLife!
+-- 
+-- Next steps:
+-- 1. Create your first profile via the app
+-- 2. Link it to a SocialBu account
+-- 3. Start scraping Instagram posts
+-- ============================================================================
