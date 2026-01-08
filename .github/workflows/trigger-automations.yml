@@ -16,7 +16,7 @@ jobs:
       - name: Trigger automation endpoint
         run: |
           RESPONSE=$(curl -s -w "\n%{http_code}" -X GET \
-            "https://blanknightlife.vercel.app/api/automations/trigger?secret=${{ secrets.CRON_SECRET }}")
+            "${{ secrets.BASE_URL }}/api/automations/trigger?secret=${{ secrets.CRON_SECRET }}")
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
           BODY=$(echo "$RESPONSE" | sed '$d')

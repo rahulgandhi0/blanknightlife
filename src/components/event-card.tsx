@@ -155,7 +155,7 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard }
 
   return (
     <>
-      <Card className="border border-zinc-800 bg-zinc-950 hover:border-zinc-700 transition-colors h-full">
+      <Card className="border border-zinc-800 bg-zinc-950 hover:border-zinc-700 transition-colors duration-200 h-full">
         <div className="grid grid-cols-[120px_1fr_200px] gap-3 p-3 items-stretch">
           <div 
             className="relative w-full h-[160px] rounded-md overflow-hidden bg-black cursor-pointer group"
@@ -167,14 +167,14 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard }
                   src={mediaUrls[0]}
                   alt={`Post from @${event.source_account}`}
                   fill
-                  className="object-cover transition-transform duration-150 group-hover:scale-105"
+                  className="object-cover transition-transform duration-200 group-hover:scale-105"
                   unoptimized
                   loading="lazy"
                   sizes="120px"
                 />
                 {/* Hover overlay */}
-                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-150 flex items-center justify-center">
-                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-150 text-white text-xs font-medium bg-black/60 px-3 py-1.5 rounded-full">
+                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200 flex items-center justify-center">
+                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 text-white text-xs font-medium bg-black/60 px-3 py-1.5 rounded-full">
                     View
                   </div>
                 </div>
@@ -307,8 +307,17 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard }
             size="sm"
             className="w-full h-9 text-sm font-semibold bg-violet-600 hover:bg-violet-500"
           >
-            <Check className="h-4 w-4 mr-2" />
-            Approve & Schedule
+            {isLoading ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Sending...
+              </>
+            ) : (
+              <>
+                <Check className="h-4 w-4 mr-2" />
+                Approve & Schedule
+              </>
+            )}
           </Button>
           
           <Button

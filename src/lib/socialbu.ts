@@ -276,7 +276,7 @@ export class SocialBuClient {
    */
   async getPublishedPosts(accountId?: number, limit = 50): Promise<SocialBuPost[]> {
     const params = new URLSearchParams({
-      status: 'published',
+      type: 'published',
       limit: String(limit),
     });
     if (accountId) {
@@ -302,7 +302,7 @@ export class SocialBuClient {
    */
   async getScheduledPosts(accountId?: number, limit = 50): Promise<SocialBuPost[]> {
     const params = new URLSearchParams({
-      status: 'scheduled',
+      type: 'scheduled',
       limit: String(limit),
     });
     if (accountId) {

@@ -41,6 +41,9 @@ export default function PendingPage() {
   }
 
   const handleApprove = async (id: string, caption: string, scheduledFor: Date) => {
+    // Remove from pending list immediately (optimistic UI)
+    setEvents((prev) => prev.filter((e) => e.id !== id))
+
     // First, update the event with approved status and caption
     const updateRes = await fetch('/api/events', {
       method: 'PATCH',
@@ -57,6 +60,8 @@ export default function PendingPage() {
 
     if (!updateRes.ok) {
       alert('Failed to approve event')
+      // Restore the event on error
+      await fetchEvents()
       return
     }
 
@@ -81,9 +86,6 @@ export default function PendingPage() {
     } else {
       console.warn('No SocialBu account linked to profile. Event approved but not scheduled.')
     }
-
-    // Remove from pending list
-    setEvents((prev) => prev.filter((e) => e.id !== id))
   }
 
   const handleDiscard = async (id: string) => {

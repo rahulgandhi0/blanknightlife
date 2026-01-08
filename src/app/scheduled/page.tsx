@@ -37,6 +37,7 @@ export default function ScheduledPage() {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editDate, setEditDate] = useState<Date | undefined>()
   const [editTime, setEditTime] = useState('12:00 PM')
+  const [editCaption, setEditCaption] = useState('')
   const [calendarOpen, setCalendarOpen] = useState(false)
   const [sendingId, setSendingId] = useState<string | null>(null)
 
@@ -223,6 +224,7 @@ export default function ScheduledPage() {
 
   const startEditing = (event: EventDiscovery) => {
     setEditingId(event.id)
+    setEditCaption(event.final_caption || '')
     if (event.scheduled_for) {
       setEditDate(new Date(event.scheduled_for))
       setEditTime(format(new Date(event.scheduled_for), 'h:mm a').toUpperCase())
@@ -236,6 +238,7 @@ export default function ScheduledPage() {
     setEditingId(null)
     setEditDate(undefined)
     setEditTime('12:00 PM')
+    setEditCaption('')
   }
 
   const saveReschedule = async (id: string) => {
@@ -247,10 +250,19 @@ export default function ScheduledPage() {
     // Find the event to check if it's already in SocialBu
     const event = events.find(e => e.id === id)
     
+    // Determine if caption changed
+    const captionChanged = editCaption.trim() !== (event?.final_caption || '').trim()
+    
     // Update UI state immediately (optimistic update)
     setEvents((prev) =>
       prev.map((e) =>
-        e.id === id ? { ...e, scheduled_for: scheduledDateTime.toISOString() } : e
+        e.id === id 
+          ? { 
+              ...e, 
+              scheduled_for: scheduledDateTime.toISOString(),
+              final_caption: editCaption.trim() || e.final_caption
+            } 
+          : e
       ).sort((a, b) => 
         new Date(a.scheduled_for || 0).getTime() - new Date(b.scheduled_for || 0).getTime()
       )
@@ -259,12 +271,19 @@ export default function ScheduledPage() {
 
     try {
       // Update local database
+      const localUpdates: { scheduled_for: string; final_caption?: string } = {
+        scheduled_for: scheduledDateTime.toISOString()
+      }
+      if (captionChanged) {
+        localUpdates.final_caption = editCaption.trim()
+      }
+
       const localRes = await fetch('/api/events', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           id,
-          updates: { scheduled_for: scheduledDateTime.toISOString() },
+          updates: localUpdates,
         }),
       })
 
@@ -274,18 +293,26 @@ export default function ScheduledPage() {
 
       // If event is already scheduled in SocialBu, update it there too
       if (event?.socialbu_post_id || event?.meta_post_id) {
-        console.log('Syncing reschedule to SocialBu...', { 
+        console.log('Syncing update to SocialBu...', { 
           eventId: id, 
           socialbu_post_id: event.socialbu_post_id,
-          newTime: scheduledDateTime.toISOString() 
+          newTime: scheduledDateTime.toISOString(),
+          captionChanged 
         })
         
+        const socialBuUpdates: { scheduledFor: string; finalCaption?: string } = {
+          scheduledFor: scheduledDateTime.toISOString()
+        }
+        if (captionChanged) {
+          socialBuUpdates.finalCaption = editCaption.trim()
+        }
+
         const socialBuRes = await fetch('/api/socialbu-update', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             eventId: id,
-            scheduledFor: scheduledDateTime.toISOString(),
+            ...socialBuUpdates,
           }),
         })
 
@@ -297,14 +324,14 @@ export default function ScheduledPage() {
         } else {
           console.log('✅ Successfully synced to SocialBu')
           // Show success feedback
-          alert('✅ Rescheduled successfully and synced to SocialBu!')
+          alert('✅ Updated successfully and synced to SocialBu!')
         }
       } else {
         console.log('ℹ️ Event not yet in SocialBu, skipping sync')
-        alert('✅ Rescheduled locally (will sync when sent to SocialBu)')
+        alert('✅ Updated locally (will sync when sent to SocialBu)')
       }
     } catch (error) {
-      console.error('Failed to save reschedule:', error)
+      console.error('Failed to save changes:', error)
       alert('Failed to save changes. Please try again.')
       // Revert optimistic update
       await fetchEvents()
@@ -458,48 +485,54 @@ export default function ScheduledPage() {
                   isPast && "border-l-2 border-l-amber-500"
                 )}
               >
-                <div className="flex items-center gap-4">
-                  {/* Thumbnail */}
-                  <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-black flex-shrink-0">
-                    {event.media_urls?.[0] && (
-                      <Image
-                        src={event.media_urls[0]}
-                        alt=""
-                        fill
-                        className="object-cover"
-                        unoptimized
-                      />
-                    )}
-                  </div>
+                {editingId === event.id ? (
+                  // Expanded editing mode
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-4">
+                      {/* Thumbnail */}
+                      <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-black flex-shrink-0">
+                        {event.media_urls?.[0] && (
+                          <Image
+                            src={event.media_urls[0]}
+                            alt=""
+                            fill
+                            className="object-cover"
+                            unoptimized
+                          />
+                        )}
+                      </div>
 
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-zinc-300">@{event.source_account}</span>
-                      {event.post_type === 'carousel' && (
-                        <Badge variant="secondary" className="text-xs">Carousel</Badge>
-                      )}
-                      {status && (
-                        <Badge variant="outline" className={cn("text-xs", status.color)}>
-                          <status.icon className="h-3 w-3 mr-1" />
-                          {status.label}
-                        </Badge>
-                      )}
+                      {/* Info */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-sm font-medium text-zinc-300">@{event.source_account}</span>
+                          {event.post_type === 'carousel' && (
+                            <Badge variant="secondary" className="text-xs">Carousel</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-zinc-600">Editing post</p>
+                      </div>
                     </div>
-                    <p className="text-sm text-zinc-500 truncate">
-                      {event.final_caption?.slice(0, 80)}...
-                    </p>
-                  </div>
 
-                  {/* Schedule time / Edit */}
-                  {editingId === event.id ? (
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    {/* Caption editor */}
+                    <div className="space-y-2">
+                      <label className="text-xs text-zinc-400">Caption</label>
+                      <textarea
+                        value={editCaption}
+                        onChange={(e) => setEditCaption(e.target.value)}
+                        className="w-full h-24 bg-zinc-800 border border-zinc-700 rounded-md p-2 text-sm text-white resize-none focus:outline-none focus:border-violet-500"
+                        placeholder="Edit caption..."
+                      />
+                    </div>
+
+                    {/* Schedule controls */}
+                    <div className="flex items-center gap-2">
                       <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
                         <PopoverTrigger asChild>
                           <Button
                             variant="outline"
                             size="sm"
-                            className="w-[130px] justify-start text-left bg-zinc-800 border-zinc-700"
+                            className="w-[140px] justify-start text-left bg-zinc-800 border-zinc-700"
                           >
                             <CalendarIcon className="mr-2 h-3.5 w-3.5" />
                             {editDate ? format(editDate, 'MMM d') : 'Date'}
@@ -524,14 +557,52 @@ export default function ScheduledPage() {
                         minMinutesFromNow={20}
                       />
 
+                      <div className="flex-1" />
+
                       <Button size="sm" onClick={() => saveReschedule(event.id)} className="bg-violet-600 hover:bg-violet-500">
-                        Save
+                        Save Changes
                       </Button>
                       <Button size="sm" variant="ghost" onClick={cancelEditing}>
                         Cancel
                       </Button>
                     </div>
-                  ) : (
+                  </div>
+                ) : (
+                  // Compact display mode
+                  <div className="flex items-center gap-4">
+                    {/* Thumbnail */}
+                    <div className="relative h-16 w-16 rounded-lg overflow-hidden bg-black flex-shrink-0">
+                      {event.media_urls?.[0] && (
+                        <Image
+                          src={event.media_urls[0]}
+                          alt=""
+                          fill
+                          className="object-cover"
+                          unoptimized
+                        />
+                      )}
+                    </div>
+
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-medium text-zinc-300">@{event.source_account}</span>
+                        {event.post_type === 'carousel' && (
+                          <Badge variant="secondary" className="text-xs">Carousel</Badge>
+                        )}
+                        {status && (
+                          <Badge variant="outline" className={cn("text-xs", status.color)}>
+                            <status.icon className="h-3 w-3 mr-1" />
+                            {status.label}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-sm text-zinc-500 truncate">
+                        {event.final_caption?.slice(0, 80)}...
+                      </p>
+                    </div>
+
+                    {/* Schedule time */}
                     <div className="text-right flex-shrink-0">
                       <div className={cn(
                         "flex items-center gap-1.5 mb-0.5",
@@ -546,10 +617,8 @@ export default function ScheduledPage() {
                         {event.scheduled_for ? format(new Date(event.scheduled_for), 'h:mm a') : ''}
                       </p>
                     </div>
-                  )}
 
-                  {/* Actions */}
-                  {editingId !== event.id && (
+                    {/* Actions */}
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {/* Send to SocialBu button (only if not already sent) */}
                       {!event.meta_post_id && !event.socialbu_post_id && (
@@ -584,7 +653,7 @@ export default function ScheduledPage() {
                         variant="ghost"
                         onClick={() => startEditing(event)}
                         className="text-zinc-400 hover:text-white"
-                        title="Reschedule"
+                        title="Edit"
                       >
                         <Pencil className="h-4 w-4" />
                       </Button>
@@ -600,8 +669,8 @@ export default function ScheduledPage() {
                         <Trash2 className="h-4 w-4" />
                       </Button>
                     </div>
-                  )}
-                </div>
+                  </div>
+                )}
               </Card>
             )
           })}

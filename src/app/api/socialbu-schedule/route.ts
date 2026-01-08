@@ -94,52 +94,106 @@ export async function POST(request: NextRequest) {
     // Generate postback URL for status updates
     const postbackUrl = `${process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000'}/api/socialbu-postback`;
 
-    const result = await client.schedulePostWithMedia(
-      accountIds,
-      typedEvent.final_caption,
-      typedEvent.media_urls,
-      new Date(typedEvent.scheduled_for),
-      postbackUrl
-    );
+    let result;
+    let socialBuPostId: string | number | null = null;
+    
+    try {
+      result = await client.schedulePostWithMedia(
+        accountIds,
+        typedEvent.final_caption,
+        typedEvent.media_urls,
+        new Date(typedEvent.scheduled_for),
+        postbackUrl
+      );
 
-    if (!result.success) {
+      if (!result.success) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: result.message || 'Failed to schedule post',
+            details: result.errors,
+          },
+          { status: 500 }
+        );
+      }
+
+      socialBuPostId = result.post_id || null;
+      console.log('✅ SocialBu scheduling successful:', { post_id: socialBuPostId });
+
+    } catch (socialBuError) {
+      console.error('❌ SocialBu scheduling failed:', socialBuError);
       return NextResponse.json(
         {
           success: false,
-          error: result.message || 'Failed to schedule post',
-          details: result.errors,
+          error: 'Failed to schedule post in SocialBu',
+          details: socialBuError instanceof Error ? socialBuError.message : String(socialBuError),
         },
         { status: 500 }
       );
     }
 
-    console.log('SocialBu response:', result);
-    console.log('Post ID from SocialBu:', result.post_id, 'Type:', typeof result.post_id);
-
     // Update event status to 'scheduled' and store SocialBu post ID
-    const numericPostId = result.post_id ? (typeof result.post_id === 'number' ? result.post_id : parseInt(result.post_id)) : null;
+    const numericPostId = socialBuPostId ? (typeof socialBuPostId === 'number' ? socialBuPostId : parseInt(String(socialBuPostId))) : null;
     
-    console.log('Saving to DB:', {
-      meta_post_id: String(result.post_id),
+    console.log('Attempting to save to DB:', {
+      meta_post_id: String(socialBuPostId),
       socialbu_post_id: numericPostId,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { error: updateError } = await (supabase as any)
-      .from('event_discovery')
-      .update({
-        status: 'scheduled',
-        meta_post_id: String(result.post_id), // Store as string
-        socialbu_post_id: numericPostId,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', eventId);
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: updateError } = await (supabase as any)
+        .from('event_discovery')
+        .update({
+          status: 'scheduled',
+          meta_post_id: String(socialBuPostId), // Store as string
+          socialbu_post_id: numericPostId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', eventId);
 
-    if (updateError) {
-      console.error('Failed to update event status:', updateError);
-      // Don't fail the request - post is already scheduled in SocialBu
-    } else {
+      if (updateError) {
+        console.error('❌ CRITICAL: Failed to update local database after successful SocialBu scheduling!');
+        console.error('Post ID in SocialBu:', socialBuPostId);
+        console.error('Event ID:', eventId);
+        console.error('Database error:', updateError);
+        
+        // This is a critical state - post is scheduled in SocialBu but not tracked locally
+        // Log this for manual intervention
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Post scheduled in SocialBu but failed to update local database',
+            critical: true,
+            socialbu_post_id: socialBuPostId,
+            event_id: eventId,
+            details: updateError.message || String(updateError),
+            action_required: 'Manual intervention needed: Post is live in SocialBu but not tracked locally',
+          },
+          { status: 500 }
+        );
+      }
+      
       console.log('✅ Successfully saved post IDs to database');
+      
+    } catch (dbError) {
+      console.error('❌ CRITICAL: Database operation threw exception after successful SocialBu scheduling!');
+      console.error('Post ID in SocialBu:', socialBuPostId);
+      console.error('Event ID:', eventId);
+      console.error('Exception:', dbError);
+      
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Post scheduled in SocialBu but database update threw exception',
+          critical: true,
+          socialbu_post_id: socialBuPostId,
+          event_id: eventId,
+          details: dbError instanceof Error ? dbError.message : String(dbError),
+          action_required: 'Manual intervention needed: Post is live in SocialBu but not tracked locally',
+        },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({

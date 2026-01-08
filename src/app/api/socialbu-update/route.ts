@@ -11,7 +11,7 @@ import { createClient } from '@/lib/supabase/server';
 export async function PATCH(request: NextRequest) {
   try {
     const body = await request.json();
-    const { eventId, scheduledFor } = body;
+    const { eventId, scheduledFor, finalCaption } = body;
 
     if (!eventId) {
       return NextResponse.json(
@@ -85,10 +85,13 @@ export async function PATCH(request: NextRequest) {
     // Update in SocialBu
     const client = new SocialBuClient();
     
-    const updates: { publish_at?: string } = {};
+    const updates: { publish_at?: string; content?: string } = {};
     if (scheduledFor) {
       // Format date as YYYY-MM-DD HH:MM:SS (UTC)
       updates.publish_at = new Date(scheduledFor).toISOString().slice(0, 19).replace('T', ' ');
+    }
+    if (finalCaption) {
+      updates.content = finalCaption;
     }
 
     const result = await client.updatePost(socialBuId, updates);
@@ -104,13 +107,20 @@ export async function PATCH(request: NextRequest) {
     }
 
     // Update local database
+    const dbUpdates: { scheduled_for?: string; final_caption?: string; updated_at: string } = {
+      updated_at: new Date().toISOString(),
+    };
+    if (scheduledFor) {
+      dbUpdates.scheduled_for = scheduledFor;
+    }
+    if (finalCaption) {
+      dbUpdates.final_caption = finalCaption;
+    }
+    
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error: updateError } = await (supabase as any)
       .from('event_discovery')
-      .update({
-        scheduled_for: scheduledFor || event.scheduled_for,
-        updated_at: new Date().toISOString(),
-      })
+      .update(dbUpdates)
       .eq('id', eventId);
 
     if (updateError) {
@@ -123,6 +133,7 @@ export async function PATCH(request: NextRequest) {
       message: 'Post updated successfully',
       event_id: eventId,
       scheduled_for: scheduledFor || event.scheduled_for,
+      final_caption: finalCaption || event.final_caption,
     });
 
   } catch (error) {

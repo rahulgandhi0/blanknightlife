@@ -41,14 +41,16 @@ export async function POST(request: NextRequest) {
     const event = data as EventDiscovery
 
     // Fetch recent edits for RL (learn from past corrections)
+    // Filter by profile_id to learn venue-specific style
     let learnedExamples: string | undefined
     if (useRL) {
       const { data: recentEdits } = await supabase
         .from('caption_edits')
-        .select('previous_caption, new_caption')
+        .select('previous_caption, new_caption, event_discovery!inner(profile_id)')
+        .eq('event_discovery.profile_id', event.profile_id)
         .not('previous_caption', 'is', null)
         .order('created_at', { ascending: false })
-        .limit(5)
+        .limit(15)
 
       if (recentEdits && recentEdits.length > 0) {
         const examples = (recentEdits as CaptionEdit[])
