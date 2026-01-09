@@ -274,11 +274,9 @@ CREATE TABLE scrape_automations (
   days_back INTEGER NOT NULL DEFAULT 3,
   
   -- When to scrape (frequency in hours)
-  frequency TEXT DEFAULT 'daily',  -- Legacy field, kept for compatibility
-  frequency_hours INTEGER DEFAULT 36,  -- Actual frequency in hours (e.g., 1, 6, 12, 24, 36, 48, 168)
+  frequency_hours INTEGER DEFAULT 36,  -- Frequency in hours (e.g., 1, 6, 12, 24, 36, 48, 168)
   run_at_hour INTEGER DEFAULT 9,
   run_at_minute INTEGER DEFAULT 0,
-  run_on_days INTEGER[] DEFAULT ARRAY[0,1,2,3,4,5,6],
   
   -- Status tracking
   is_active BOOLEAN DEFAULT true,

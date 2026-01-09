@@ -7,16 +7,22 @@ interface ProfileContextType {
   currentProfile: Profile | null
   profiles: Profile[]
   loading: boolean
+  isAuthenticated: boolean
+  authenticate: (pin: string) => boolean
   switchProfile: (profileId: string) => void
   refreshProfiles: () => Promise<void>
 }
 
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined)
 
+const CORRECT_PIN = '4482'
+const AUTH_KEY = 'blanknightlife_auth'
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [currentProfile, setCurrentProfile] = useState<Profile | null>(null)
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   // Load all profiles
   const loadProfiles = async () => {
@@ -42,11 +48,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Initialize on mount
+  // Check authentication on mount
   useEffect(() => {
-    loadProfiles()
+    const authStatus = sessionStorage.getItem(AUTH_KEY)
+    if (authStatus === 'true') {
+      setIsAuthenticated(true)
+      loadProfiles()
+    } else {
+      setLoading(false)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const authenticate = (pin: string): boolean => {
+    if (pin === CORRECT_PIN) {
+      setIsAuthenticated(true)
+      sessionStorage.setItem(AUTH_KEY, 'true')
+      loadProfiles()
+      return true
+    }
+    return false
+  }
 
   const switchProfile = (profileId: string) => {
     const profile = profiles.find(p => p.id === profileId)
@@ -80,6 +102,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         currentProfile,
         profiles,
         loading,
+        isAuthenticated,
+        authenticate,
         switchProfile,
         refreshProfiles,
       }}

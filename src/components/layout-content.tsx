@@ -2,10 +2,11 @@
 
 import { Sidebar } from '@/components/sidebar'
 import { useAuth } from '@/contexts/auth-context'
+import { PasswordLock } from '@/components/password-lock'
 import { Loader2 } from 'lucide-react'
 
 export function LayoutContent({ children }: { children: React.ReactNode }) {
-  const { loading } = useAuth()
+  const { loading, isAuthenticated, authenticate } = useAuth()
   
   // Show loading screen while loading profiles
   if (loading) {
@@ -16,12 +17,17 @@ export function LayoutContent({ children }: { children: React.ReactNode }) {
     )
   }
 
-    return (
-      <>
-        <Sidebar />
-        <main className="pl-64 min-h-screen">
-          {children}
-        </main>
-      </>
-    )
+  // Show password lock if not authenticated
+  if (!isAuthenticated) {
+    return <PasswordLock onAuthenticate={authenticate} />
   }
+
+  return (
+    <>
+      <Sidebar />
+      <main className="pl-64 min-h-screen">
+        {children}
+      </main>
+    </>
+  )
+}
