@@ -17,26 +17,56 @@ export const maxDuration = 300 // 5 minutes max
 
 const FIXED_FREQUENCY_HOURS = 36
 
-// Calculate next run time based on frequency_hours
+/**
+ * Calculate next run time anchored to the previous scheduled time to prevent drift.
+ * If the calculated next run is in the past (e.g., after downtime), keep adding
+ * frequency_hours until it's in the future.
+ * 
+ * @param previousNextRunAt - The previous next_run_at timestamp from the automation
+ * @param frequencyHours - The frequency in hours
+ * @param now - Current timestamp for reference
+ * @returns The next scheduled run time
+ */
 function calculateNextRun(
-  frequencyHours: number
+  previousNextRunAt: string | Date,
+  frequencyHours: number,
+  now: Date = new Date()
 ): Date {
-  const now = new Date()
-  const next = new Date(now.getTime() + frequencyHours * 60 * 60 * 1000)
-  return next
+  const previousNext = new Date(previousNextRunAt)
+  const frequencyMs = frequencyHours * 60 * 60 * 1000
+  
+  // Start with the previous scheduled time + frequency
+  let nextRun = new Date(previousNext.getTime() + frequencyMs)
+  
+  // If we're in the past (e.g., after downtime), keep adding frequency until we're in the future
+  while (nextRun.getTime() <= now.getTime()) {
+    nextRun = new Date(nextRun.getTime() + frequencyMs)
+  }
+  
+  return nextRun
 }
 
 const LOOKBACK_FALLBACK_HOURS = 120
 
-// Calculate how many hours to look back for a scrape run.
-// If there's a previous run timestamp, use the actual gap; otherwise fall back to a fixed window.
+/**
+ * Calculate how many hours to look back for a scrape run.
+ * Uses the actual gap between last_run_at and now to determine the scrape window.
+ * This ensures we capture all posts since the last successful run.
+ * 
+ * @param automation - The automation object with last_run_at timestamp
+ * @param referenceDate - Current timestamp (now)
+ * @returns Number of hours to look back
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function calculateSinceHours(automation: any, referenceDate: Date): number {
   if (!automation?.last_run_at) {
+    // First run - use fallback window
     return LOOKBACK_FALLBACK_HOURS
   }
   const lastRunAt = new Date(automation.last_run_at)
   const diffMs = Math.max(0, referenceDate.getTime() - lastRunAt.getTime())
-  const diffHours = Math.max(1, Math.ceil(diffMs / (60 * 60 * 1000)))
+  // Add a small buffer (10%) to account for any timing variations
+  const diffHours = Math.max(1, Math.ceil((diffMs / (60 * 60 * 1000)) * 1.1))
   return diffHours
 }
 
@@ -130,8 +160,12 @@ export async function GET(request: NextRequest) {
         const scrapeData = await scrapeRes.json()
         const success = scrapeData.success === true
 
-        // Calculate next run
-        const nextRunAt = calculateNextRun(automation.frequency_hours || FIXED_FREQUENCY_HOURS)
+        // Calculate next run anchored to previous scheduled time to prevent drift
+        const nextRunAt = calculateNextRun(
+          automation.next_run_at,
+          automation.frequency_hours || FIXED_FREQUENCY_HOURS,
+          runTimestamp
+        )
 
         // Update automation status
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -163,8 +197,12 @@ export async function GET(request: NextRequest) {
           },
         })
       } catch (err) {
-        // Update as failed
-        const nextRunAt = calculateNextRun(automation.frequency_hours || FIXED_FREQUENCY_HOURS)
+        // Update as failed - still calculate next run anchored to prevent drift
+        const nextRunAt = calculateNextRun(
+          automation.next_run_at,
+          automation.frequency_hours || FIXED_FREQUENCY_HOURS,
+          runTimestamp
+        )
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         await (supabase as any)

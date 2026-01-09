@@ -97,7 +97,6 @@ export default function AutomationsPage() {
   const [account, setAccount] = useState('')
   const [timeInput, setTimeInput] = useState('9:00 AM')
   const [frequencyHours, setFrequencyHours] = useState(36)
-  const [daysBack, setDaysBack] = useState(3)
 
   // Scrape history state
   const [scrapeHistory, setScrapeHistory] = useState<ScrapeHistoryItem[]>([])
@@ -139,7 +138,6 @@ export default function AutomationsPage() {
     setAccount('')
     setTimeInput('9:00 AM')
     setFrequencyHours(36)
-    setDaysBack(3)
     setShowForm(false)
     setEditingId(null)
   }
@@ -154,12 +152,15 @@ export default function AutomationsPage() {
       return
     }
     
+    // Calculate smart default for initial scrape: 2x frequency or minimum 5 days
+    const calculatedDaysBack = Math.max(5, Math.ceil((frequencyHours * 2) / 24))
+    
     const payload = {
       account_handle: account.trim(),
       run_at_hour: pstToUtc(parsedTime.hour24),
       run_at_minute: parsedTime.minute,
       frequency_hours: frequencyHours,
-      days_back: daysBack,
+      days_back: calculatedDaysBack,
     }
 
     try {
@@ -187,7 +188,6 @@ export default function AutomationsPage() {
     setAccount(automation.account_handle)
     setTimeInput(formatTime(automation.run_at_hour, automation.run_at_minute))
     setFrequencyHours(automation.frequency_hours || 36)
-    setDaysBack(automation.days_back || 3)
     setEditingId(automation.id)
     setShowForm(true)
   }
@@ -294,7 +294,7 @@ export default function AutomationsPage() {
 
               <div className="grid grid-cols-12 gap-3 items-end">
                 {/* Frequency */}
-                <div className="col-span-6">
+                <div className="col-span-10">
                   <label className="text-xs text-zinc-500 mb-1 block">Frequency</label>
                   <select
                     value={frequencyHours}
@@ -308,19 +308,6 @@ export default function AutomationsPage() {
                     <option value={72}>Every 3 days (72h)</option>
                     <option value={168}>Weekly (168h)</option>
                   </select>
-                </div>
-
-                {/* Days Back */}
-                <div className="col-span-4">
-                  <label className="text-xs text-zinc-500 mb-1 block">Days Back</label>
-                  <Input
-                    type="number"
-                    min={1}
-                    max={30}
-                    value={daysBack}
-                    onChange={(e) => setDaysBack(Number(e.target.value))}
-                    className="bg-zinc-900 border-zinc-800 h-9"
-                  />
                 </div>
 
                 {/* Actions */}
@@ -374,9 +361,6 @@ export default function AutomationsPage() {
                     </Badge>
                     <span className="text-xs text-zinc-500">
                       @ {formatTime(automation.run_at_hour, automation.run_at_minute)} PST
-                    </span>
-                    <span className="text-[10px] text-zinc-600">
-                      ({automation.days_back || 3}d back)
                     </span>
                   </div>
                   {automation.last_run_at && (

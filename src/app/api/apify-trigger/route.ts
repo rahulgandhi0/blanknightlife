@@ -297,8 +297,8 @@ export async function POST(request: NextRequest) {
     steps = updateStep(steps, 'Validate input', 'done')
 
     const token = process.env.APIFY_API_TOKEN
-    const envActor = process.env.APIFY_ACTOR_ID
-    const primaryActor = envActor ? envActor.replace('/', '~') : 'apify~instagram-api-scraper'
+    // Use the instagram-scraper actor (Actor ID: shu8hvrXbJbY3Eb9W)
+    const primaryActor = 'apify~instagram-scraper'
     const fallbackActor = 'apify~instagram-post-scraper'
 
     if (!token) {
@@ -309,6 +309,10 @@ export async function POST(request: NextRequest) {
     const cleanHandle = account.trim().replace(/^@/, '')
     const hours = Number(sinceHours) || 48
     const cutoffMs = Date.now() - hours * 60 * 60 * 1000
+    
+    // Calculate onlyPostsNewerThan date (YYYY-MM-DD format)
+    const newerThanDate = new Date(cutoffMs)
+    const onlyPostsNewerThan = newerThanDate.toISOString().split('T')[0]
 
     // Prefer the current origin to avoid Vercel protection redirects; fall back to env
     const origin = (() => {
@@ -324,25 +328,20 @@ export async function POST(request: NextRequest) {
       process.env.NEXT_PUBLIC_BASE_URL ||
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${localPort}`)
 
-    const callActor = async (actorId: string, useApiScraperShape: boolean) => {
-      const profileUrl = `https://www.instagram.com/${cleanHandle}`
-      const input = useApiScraperShape
+    const callActor = async (actorId: string, useInstagramScraper: boolean) => {
+      const profileUrl = `https://www.instagram.com/${cleanHandle}/`
+      
+      const input = useInstagramScraper
         ? {
+            // apify/instagram-scraper input schema
             directUrls: [profileUrl],
-            resultsLimit: 25,
-            onlyPostsNewerThan: `${hours} hours`,
-            resultsType: 'posts', // restrict to feed posts
-            addStories: false,
-            addTaggedPosts: false,
-            includeStories: false,
-            includeTagged: false,
-            includeHighlights: false,
-            includeComments: false,
-            includeReplies: false,
-            downloadMedia: false,
+            resultsType: 'posts',
+            resultsLimit: 50,
+            onlyPostsNewerThan: onlyPostsNewerThan, // YYYY-MM-DD format
             proxy: { useApifyProxy: true },
           }
         : {
+            // Fallback actor schema
             username: [cleanHandle],
             resultsType: 'posts',
             resultsLimit: 50,
@@ -412,14 +411,16 @@ export async function POST(request: NextRequest) {
 
     const normalized = rawPosts.map(normalizePost)
 
+    // Safety filter: Remove pinned posts and any stray older posts that may have been returned
+    // even though we use onlyPostsNewerThan in the Apify actor
     const filtered = normalized.filter((post) => {
-      // Skip pinned posts
+      // Skip pinned posts (they can appear at the top regardless of date)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       if (post.isPinned || (post as any).pinned) return false
       // Skip stories (but keep reels)
       const productType = (post.productType || '').toString().toLowerCase()
       if (productType === 'story') return false
-      // Must have timestamp within window
+      // Must have timestamp within window (safety check)
       if (post.timestamp) {
         const ts = new Date(post.timestamp).getTime()
         if (!isNaN(ts) && ts < cutoffMs) return false
