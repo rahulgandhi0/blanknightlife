@@ -169,7 +169,7 @@ CREATE TABLE event_discovery (
   updated_at TIMESTAMPTZ DEFAULT NOW(),
   
   -- Constraints
-  CONSTRAINT valid_status CHECK (status IN ('pending', 'approved', 'scheduled', 'posted', 'archived', 'discarded')),
+  CONSTRAINT valid_status CHECK (status IN ('pending', 'approved', 'scheduling', 'scheduled', 'posted', 'archived', 'discarded')),
   CONSTRAINT valid_post_type CHECK (post_type IN ('image', 'carousel', 'reel'))
 );
 
@@ -186,7 +186,7 @@ CREATE TRIGGER update_event_discovery_updated_at
   EXECUTE FUNCTION update_updated_at_column();
 
 COMMENT ON TABLE event_discovery IS 'Instagram posts scraped from source accounts';
-COMMENT ON COLUMN event_discovery.status IS 'Workflow status: pending → approved → scheduled → posted';
+COMMENT ON COLUMN event_discovery.status IS 'Workflow status: pending → approved → scheduling → scheduled → posted';
 COMMENT ON COLUMN event_discovery.post_type IS 'Type of Instagram post: image, carousel, or reel';
 
 -- -----------------------------------------------------------------------------
@@ -309,6 +309,47 @@ CREATE TRIGGER update_scrape_automations_updated_at
 COMMENT ON TABLE scrape_automations IS 'Automated scraping schedules for Instagram accounts';
 COMMENT ON COLUMN scrape_automations.frequency_hours IS 'Hours between scrape runs (e.g., 1=hourly, 24=daily, 168=weekly)';
 COMMENT ON CONSTRAINT unique_profile_account ON scrape_automations IS 'Prevents duplicate automations per account';
+
+-- -----------------------------------------------------------------------------
+-- CRON JOB: Cleanup orphaned 'scheduling' events (WAL-Lite safety net)
+-- -----------------------------------------------------------------------------
+-- This function checks for events stuck in 'scheduling' status for >5 minutes
+-- and reverts them to 'approved' so users can retry scheduling.
+-- 
+-- To enable this cron job in Supabase:
+-- 1. Go to Database → Extensions → Enable "pg_cron"
+-- 2. Run the cron schedule command below in SQL Editor
+-- 3. The job will run every 5 minutes automatically
+-- -----------------------------------------------------------------------------
+
+CREATE OR REPLACE FUNCTION cleanup_orphaned_scheduling_events()
+RETURNS void AS $$
+DECLARE
+  affected_count INTEGER;
+BEGIN
+  -- Find events stuck in 'scheduling' for more than 5 minutes
+  -- and revert them to 'approved' so they can be retried
+  UPDATE event_discovery
+  SET 
+    status = 'approved',
+    updated_at = NOW()
+  WHERE 
+    status = 'scheduling'
+    AND updated_at < NOW() - INTERVAL '5 minutes';
+  
+  GET DIAGNOSTICS affected_count = ROW_COUNT;
+  
+  IF affected_count > 0 THEN
+    RAISE NOTICE 'Cleaned up % orphaned scheduling event(s)', affected_count;
+  END IF;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION cleanup_orphaned_scheduling_events IS 'WAL-Lite safety net: Reverts events stuck in scheduling status for >5 minutes';
+
+-- Schedule the cron job to run every 5 minutes
+-- Uncomment the line below after enabling pg_cron extension:
+-- SELECT cron.schedule('cleanup-orphaned-scheduling', '*/5 * * * *', 'SELECT cleanup_orphaned_scheduling_events();');
 
 -- ============================================================================
 -- STEP 5: DISABLE RLS & GRANT PERMISSIONS

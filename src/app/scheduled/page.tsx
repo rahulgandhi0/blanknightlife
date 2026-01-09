@@ -122,20 +122,36 @@ export default function ScheduledPage() {
     }
   }, [])
 
-  // Sync all scheduled events with SocialBu on page load
+  // Sync only the next 5 upcoming scheduled events with SocialBu to avoid N+1 API flood
+  // The postback_url webhook handles real-time status updates, so aggressive polling is unnecessary
   const syncAllWithSocialBu = useCallback(async () => {
     const scheduledEvents = events.filter(e => e.socialbu_post_id && e.status === 'scheduled')
     
     if (scheduledEvents.length === 0) return
 
-    console.log(`Syncing ${scheduledEvents.length} events with SocialBu...`)
+    // OPTIMIZATION: Only sync the next 5 upcoming posts to reduce API load
+    // Sort by scheduled_for and take the first 5
+    const upcomingEvents = scheduledEvents
+      .sort((a, b) => {
+        const dateA = a.scheduled_for ? new Date(a.scheduled_for).getTime() : 0
+        const dateB = b.scheduled_for ? new Date(b.scheduled_for).getTime() : 0
+        return dateA - dateB
+      })
+      .slice(0, 5)
+
+    if (upcomingEvents.length === 0) return
+
+    console.log(`Syncing next ${upcomingEvents.length} upcoming events with SocialBu (out of ${scheduledEvents.length} total)...`)
     
     const results = await Promise.allSettled(
-      scheduledEvents.map(event => syncEventWithSocialBu(event.id))
+      upcomingEvents.map(event => syncEventWithSocialBu(event.id))
     )
     
     const successCount = results.filter(r => r.status === 'fulfilled' && r.value).length
-    console.log(`Synced ${successCount}/${scheduledEvents.length} events with SocialBu`)
+    console.log(`Synced ${successCount}/${upcomingEvents.length} events with SocialBu`)
+    
+    // Note: We rely on the postback_url webhook for real-time status updates.
+    // This limited sync is just a safety check for the most imminent posts.
   }, [events, syncEventWithSocialBu])
 
   // Fetch events on mount and sync with SocialBu

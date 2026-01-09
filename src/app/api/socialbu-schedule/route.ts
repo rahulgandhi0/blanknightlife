@@ -88,7 +88,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Schedule with SocialBu
+    // WAL-Lite Implementation: Step 1 - Set status to 'scheduling' before calling SocialBu
+    // This prevents dual-write inconsistency and allows recovery from failures
+    console.log('📝 Step 1: Setting event status to "scheduling"...');
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error: schedulingError } = await (supabase as any)
+        .from('event_discovery')
+        .update({
+          status: 'scheduling',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', eventId);
+
+      if (schedulingError) {
+        console.error('❌ Failed to set scheduling state:', schedulingError);
+        return NextResponse.json(
+          {
+            success: false,
+            error: 'Failed to initiate scheduling process',
+            details: schedulingError.message || String(schedulingError),
+          },
+          { status: 500 }
+        );
+      }
+      console.log('✅ Event marked as "scheduling"');
+    } catch (error) {
+      console.error('❌ Exception while setting scheduling state:', error);
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Failed to initiate scheduling process',
+          details: error instanceof Error ? error.message : String(error),
+        },
+        { status: 500 }
+      );
+    }
+
+    // Step 2: Execute SocialBu API call
     const client = new SocialBuClient();
     
     // Generate postback URL for status updates
@@ -97,6 +134,7 @@ export async function POST(request: NextRequest) {
     let result;
     let socialBuPostId: string | number | null = null;
     
+    console.log('📤 Step 2: Calling SocialBu API...');
     try {
       result = await client.schedulePostWithMedia(
         accountIds,
@@ -107,6 +145,19 @@ export async function POST(request: NextRequest) {
       );
 
       if (!result.success) {
+        // Step 4: Error Handling - Revert to 'approved' so user can retry
+        console.error('❌ SocialBu API returned failure:', result.message);
+        console.log('🔄 Reverting status to "approved" for retry...');
+        
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('event_discovery')
+          .update({
+            status: 'approved',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', eventId);
+
         return NextResponse.json(
           {
             success: false,
@@ -121,7 +172,23 @@ export async function POST(request: NextRequest) {
       console.log('✅ SocialBu scheduling successful:', { post_id: socialBuPostId });
 
     } catch (socialBuError) {
-      console.error('❌ SocialBu scheduling failed:', socialBuError);
+      // Step 4: Error Handling - Revert to 'approved' so user can retry
+      console.error('❌ SocialBu API threw exception:', socialBuError);
+      console.log('🔄 Reverting status to "approved" for retry...');
+      
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (supabase as any)
+          .from('event_discovery')
+          .update({
+            status: 'approved',
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', eventId);
+      } catch (revertError) {
+        console.error('❌ Failed to revert status:', revertError);
+      }
+
       return NextResponse.json(
         {
           success: false,
@@ -132,9 +199,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Update event status to 'scheduled' and store SocialBu post ID
+    // Step 3: Success - Update to 'scheduled' with post ID
     const numericPostId = socialBuPostId ? (typeof socialBuPostId === 'number' ? socialBuPostId : parseInt(String(socialBuPostId))) : null;
     
+    console.log('💾 Step 3: Saving to database with "scheduled" status...');
     console.log('Attempting to save to DB:', {
       meta_post_id: String(socialBuPostId),
       socialbu_post_id: numericPostId,
@@ -164,6 +232,12 @@ export async function POST(request: NextRequest) {
           const deleteResult = await client.deletePost(socialBuPostId!);
           if (deleteResult.success) {
             console.log('✅ Successfully rolled back: Post deleted from SocialBu');
+            // Revert to approved
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            await (supabase as any)
+              .from('event_discovery')
+              .update({ status: 'approved', updated_at: new Date().toISOString() })
+              .eq('id', eventId);
           } else {
             console.error('❌ Rollback failed: Could not delete post from SocialBu:', deleteResult.message);
           }
@@ -195,6 +269,12 @@ export async function POST(request: NextRequest) {
         const deleteResult = await client.deletePost(socialBuPostId!);
         if (deleteResult.success) {
           console.log('✅ Successfully rolled back: Post deleted from SocialBu');
+          // Revert to approved
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await (supabase as any)
+            .from('event_discovery')
+            .update({ status: 'approved', updated_at: new Date().toISOString() })
+            .eq('id', eventId);
         } else {
           console.error('❌ Rollback failed: Could not delete post from SocialBu:', deleteResult.message);
         }
@@ -211,6 +291,14 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    // TODO: ORPHAN HANDLING - Implement a Cron job that checks for events stuck in 'scheduling' 
+    // status for more than 5 minutes. This acts as a safety net for the WAL-Lite pattern.
+    // The cron should:
+    // 1. Find events with status='scheduling' AND updated_at < NOW() - INTERVAL '5 minutes'
+    // 2. Check if the post exists in SocialBu (using meta_post_id if available)
+    // 3. If exists in SocialBu: update local status to 'scheduled'
+    // 4. If not exists: revert status to 'approved' so user can retry
 
     return NextResponse.json({
       success: true,

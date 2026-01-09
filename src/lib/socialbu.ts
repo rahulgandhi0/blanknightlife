@@ -34,6 +34,14 @@ export interface CreatePostPayload {
   publish_at?: string; // Format: YYYY-MM-DD HH:MM:SS (UTC)
   existing_attachments?: Array<{ upload_token: string }>; // Array of upload_token objects from media upload
   postback_url?: string; // Webhook URL for status updates
+  draft?: boolean; // If true, saves as draft instead of scheduling
+  team_id?: number; // Team ID for team-based posting
+  queue_ids?: number[]; // Array of queue IDs for queue-based scheduling
+  options?: { 
+    video_title?: string; 
+    comment?: string; 
+    [key: string]: any; 
+  }; // Additional platform-specific options
 }
 
 export interface CreatePostResponse {
@@ -340,7 +348,7 @@ export class SocialBuClient {
   }
 
   /**
-   * 8. UPDATE POST - Update post content or schedule time
+   * 8. UPDATE POST - Update post content, schedule time, media, or other fields
    * PATCH /api/v1/posts/{postId}
    */
   async updatePost(
@@ -349,6 +357,13 @@ export class SocialBuClient {
       content?: string;
       publish_at?: string; // Format: YYYY-MM-DD HH:MM:SS (UTC)
       accounts?: number[];
+      existing_attachments?: string[]; // Array of upload tokens to replace media
+      team_id?: number;
+      options?: { 
+        video_title?: string; 
+        comment?: string; 
+        [key: string]: any; 
+      };
     }
   ): Promise<{ success: boolean; message?: string }> {
     const response = await fetch(`${this.baseUrl}/posts/${postId}`, {
