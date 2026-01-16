@@ -254,9 +254,19 @@ export class SocialBuClient {
       };
     }
 
+    // Handle multi-account response: SocialBu returns an array of posts for multi-account requests
+    // For single account: data.id or data.post_id
+    // For multi-account: data.posts (array) - we'll use the first post's ID as primary
+    let postId: string | undefined;
+    if (data.posts && Array.isArray(data.posts) && data.posts.length > 0) {
+      postId = data.posts[0].id || data.posts[0].post_id;
+    } else {
+      postId = data.id || data.post_id;
+    }
+
     return {
       success: true,
-      post_id: data.id || data.post_id,
+      post_id: postId,
       message: 'Post scheduled successfully',
     };
   }
@@ -421,6 +431,13 @@ export class SocialBuClient {
     caption: string,
     mediaUrls: string[],
     scheduledAt: Date,
+    options?: { 
+      share_reel_to_feed?: boolean;
+      privacy_status?: string;
+      thumbnail?: string;
+      video_title?: string;
+      [key: string]: any;
+    },
     postbackUrl?: string
   ): Promise<CreatePostResponse> {
     // Upload all media files in parallel and get tokens
@@ -440,6 +457,7 @@ export class SocialBuClient {
       content: caption,
       publish_at,
       existing_attachments: uploadTokens,
+      options, // Pass platform-specific options
       postback_url: postbackUrl,
     });
   }

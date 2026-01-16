@@ -134,15 +134,79 @@ export async function POST(request: NextRequest) {
     let result;
     let socialBuPostId: string | number | null = null;
     
+    // Prepare platform-specific options
+    const options: any = {};
+    
+    // For Instagram Reels
+    if (typedEvent.post_type === 'reel') {
+      options.share_reel_to_feed = true;
+    }
+    
+    // For TikTok (if any TikTok accounts are in the list)
+    // Note: You might want to check account types from the profile table
+    options.privacy_status = 'PUBLIC_TO_EVERYONE';
+    
     console.log('📤 Step 2: Calling SocialBu API...');
+    console.log('Post type:', typedEvent.post_type);
+    console.log('Media count:', typedEvent.media_urls.length);
+    console.log('Account IDs:', accountIds);
+    
     try {
-      result = await client.schedulePostWithMedia(
-        accountIds,
-        typedEvent.final_caption,
-        typedEvent.media_urls,
-        new Date(typedEvent.scheduled_for),
-        postbackUrl
-      );
+      // Handle carousels and multi-media posts differently
+      // For carousels (multiple media), send individual requests to avoid "Maximum 1" error
+      if (typedEvent.media_urls.length > 1) {
+        console.log('🎠 Carousel detected - sending individual requests per account');
+        
+        const results = [];
+        for (const accountId of accountIds) {
+          console.log(`  Scheduling for account ${accountId}...`);
+          const accountResult = await client.schedulePostWithMedia(
+            [accountId], // Single account
+            typedEvent.final_caption,
+            typedEvent.media_urls,
+            new Date(typedEvent.scheduled_for),
+            options,
+            postbackUrl
+          );
+          
+          if (!accountResult.success) {
+            console.error(`  ❌ Failed for account ${accountId}:`, accountResult.message);
+            // Continue with other accounts but track failures
+          } else {
+            console.log(`  ✅ Success for account ${accountId}:`, accountResult.post_id);
+          }
+          
+          results.push(accountResult);
+        }
+        
+        // Check if at least one succeeded
+        const successfulResults = results.filter(r => r.success);
+        if (successfulResults.length === 0) {
+          throw new Error(`All accounts failed. First error: ${results[0]?.message || 'Unknown error'}`);
+        }
+        
+        // Use the first successful post ID
+        socialBuPostId = successfulResults[0].post_id || null;
+        result = {
+          success: true,
+          post_id: socialBuPostId,
+          message: `Scheduled to ${successfulResults.length}/${accountIds.length} accounts`,
+        };
+        
+      } else {
+        // Single media - can send to multiple accounts at once
+        console.log('🖼️ Single media - sending multi-account request');
+        result = await client.schedulePostWithMedia(
+          accountIds,
+          typedEvent.final_caption,
+          typedEvent.media_urls,
+          new Date(typedEvent.scheduled_for),
+          options,
+          postbackUrl
+        );
+        
+        socialBuPostId = result.post_id || null;
+      }
 
       if (!result.success) {
         // Step 4: Error Handling - Revert to 'approved' so user can retry
@@ -168,7 +232,6 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      socialBuPostId = result.post_id || null;
       console.log('✅ SocialBu scheduling successful:', { post_id: socialBuPostId });
 
     } catch (socialBuError) {
