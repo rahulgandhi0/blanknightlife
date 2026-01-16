@@ -433,9 +433,7 @@ export class SocialBuClient {
     scheduledAt: Date,
     options?: { 
       share_reel_to_feed?: boolean;
-      privacy_status?: string;
       thumbnail?: string;
-      video_title?: string;
       [key: string]: any;
     },
     postbackUrl?: string

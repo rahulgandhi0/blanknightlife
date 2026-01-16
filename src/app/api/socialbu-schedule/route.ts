@@ -142,10 +142,6 @@ export async function POST(request: NextRequest) {
       options.share_reel_to_feed = true;
     }
     
-    // For TikTok (if any TikTok accounts are in the list)
-    // Note: You might want to check account types from the profile table
-    options.privacy_status = 'PUBLIC_TO_EVERYONE';
-    
     console.log('📤 Step 2: Calling SocialBu API...');
     console.log('Post type:', typedEvent.post_type);
     console.log('Media count:', typedEvent.media_urls.length);
