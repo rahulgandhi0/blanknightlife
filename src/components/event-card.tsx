@@ -283,9 +283,10 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard, 
                 mode="single"
                 selected={selectedDate}
                 onSelect={(date) => {
-                  setSelectedDate(date)
-                  // Fix: Use setTimeout to prevent unmounting before event propagation finishes
-                  setTimeout(() => setCalendarOpen(false), 0)
+                  if (date) {
+                    setSelectedDate(date)
+                    setCalendarOpen(false)
+                  }
                 }}
                 initialFocus
                 disabled={(date) => {
