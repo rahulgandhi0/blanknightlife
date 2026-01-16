@@ -33,19 +33,26 @@ export function TimeInput({
 
   // Parse the value prop to populate inputs
   useEffect(() => {
-    const match = value.match(/(\d+):(\d+)\s*(AM|PM)/i)
-    if (match) {
-      const hours = match[1].padStart(2, '0')
-      const minutes = match[2].padStart(2, '0')
-      const mer = match[3].toUpperCase() as 'AM' | 'PM'
-      
-      setHourDigit1(hours[0])
-      setHourDigit2(hours[1])
-      setMinuteDigit1(minutes[0])
-      setMinuteDigit2(minutes[1])
-      setMeridiem(mer)
+    // Reconstruct current internal time to compare against prop
+    const currentInternal = `${hourDigit1}${hourDigit2}:${minuteDigit1}${minuteDigit2} ${meridiem}`
+
+    // Fix: Only update internal state if the prop value is meaningfully different
+    // This prevents the "echo" update that causes flickering/cursor jumps
+    if (value && value !== currentInternal) {
+      const match = value.match(/(\d+):(\d+)\s*(AM|PM)/i)
+      if (match) {
+        const hours = match[1].padStart(2, '0')
+        const minutes = match[2].padStart(2, '0')
+        const mer = match[3].toUpperCase() as 'AM' | 'PM'
+        
+        setHourDigit1(hours[0])
+        setHourDigit2(hours[1])
+        setMinuteDigit1(minutes[0])
+        setMinuteDigit2(minutes[1])
+        setMeridiem(mer)
+      }
     }
-  }, [value])
+  }, [value, hourDigit1, hourDigit2, minuteDigit1, minuteDigit2, meridiem])
 
   const validateAndUpdate = (h1: string, h2: string, m1: string, m2: string, mer: 'AM' | 'PM') => {
     // All 4 digits must be filled

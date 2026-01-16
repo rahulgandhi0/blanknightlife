@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, memo } from 'react'
+import { useState, useEffect, memo } from 'react'
 import Image from 'next/image'
 import { format, setHours, setMinutes } from 'date-fns'
 import { Card } from '@/components/ui/card'
@@ -64,12 +64,13 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard, 
   const hasMultipleImages = mediaUrls.length > 1
   const hasAiCaption = !!event.ai_generated_caption
 
-  useState(() => {
+  // Fix: Move fetch to useEffect to prevent render-phase side effects
+  useEffect(() => {
     fetch('/api/caption-stats')
       .then(res => res.json())
       .then(data => setCaptionStats(data))
       .catch(console.error)
-  })
+  }, [])
 
   const captionLength = caption.length
   const isWithinRange = captionStats 
@@ -283,7 +284,8 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard, 
                 selected={selectedDate}
                 onSelect={(date) => {
                   setSelectedDate(date)
-                  setCalendarOpen(false)
+                  // Fix: Use setTimeout to prevent unmounting before event propagation finishes
+                  setTimeout(() => setCalendarOpen(false), 0)
                 }}
                 initialFocus
                 disabled={(date) => {
