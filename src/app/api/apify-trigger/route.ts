@@ -168,13 +168,15 @@ async function handleSinglePost(
   steps = updateStep(steps, 'Run Apify', 'running', 'Fetching single post')
 
   try {
-    // Use the Instagram Post Scraper for single posts
-    const actorId = 'apify~instagram-post-scraper'
+    // FIX: Use the primary actor which supports direct URLs without a mandatory username field
+    const actorId = 'apify~instagram-scraper'
     const postUrlFinal = postUrl || `https://www.instagram.com/p/${shortcode}/`
     
     const input = {
       directUrls: [postUrlFinal],
       resultsLimit: 1,
+      resultsType: 'posts',
+      searchLimit: 1, // Keep consistent with the primary actor's schema
       proxy: { useApifyProxy: true },
     }
 
