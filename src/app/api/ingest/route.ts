@@ -1,58 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
+import { featureFlags } from '@/lib/feature-flags'
+import { logMetric, nowMs } from '@/lib/metrics'
+import { uploadMediaToStorage } from '@/lib/media'
 import type { ApifyInstagramPost } from '@/types/apify'
 import type { PostType } from '@/types/database'
-
-// Download image and upload to Supabase Storage
-async function uploadMediaToStorage(
-  supabase: ReturnType<typeof createServiceClient>,
-  mediaUrl: string,
-  postId: string,
-  index: number
-): Promise<string | null> {
-  try {
-    // Download the image
-    const response = await fetch(mediaUrl)
-    if (!response.ok) {
-      console.error(`Failed to download media: ${mediaUrl}, status: ${response.status}`)
-      return null
-    }
-
-    // Use arrayBuffer for Node.js compatibility
-    const arrayBuffer = await response.arrayBuffer()
-    const buffer = Buffer.from(arrayBuffer)
-    
-    const contentType = response.headers.get('content-type') || 'image/jpeg'
-    const extension = contentType.includes('png') ? 'png' : 'jpg'
-    const fileName = `${postId}_${index}.${extension}`
-
-    console.log(`Uploading ${fileName} to Supabase Storage (${buffer.length} bytes)`)
-
-    // Upload to Supabase Storage
-    const { data, error } = await supabase.storage
-      .from('posters')
-      .upload(fileName, buffer, {
-        contentType,
-        upsert: true,
-      })
-
-    if (error) {
-      console.error('Supabase storage error:', error.message, error)
-      return null
-    }
-
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from('posters')
-      .getPublicUrl(data.path)
-
-    console.log(`Uploaded successfully: ${urlData.publicUrl}`)
-    return urlData.publicUrl
-  } catch (error) {
-    console.error('Media upload error:', error)
-    return null
-  }
-}
 
 // Process a single post from Apify
 async function processPost(
@@ -143,21 +95,26 @@ async function processPost(
     postType = 'carousel'
   }
 
+  const sourceMediaUrls = uniqueMediaUrls
+  const shouldUploadOnIngest = !featureFlags.uploadOnApprove
+
   // Upload all media to Supabase Storage (prevent Instagram URL expiry)
   const uploadedUrls: string[] = []
-  for (let i = 0; i < uniqueMediaUrls.length; i++) {
-    const permanentUrl = await uploadMediaToStorage(
-      supabase,
-      uniqueMediaUrls[i],
-      igPostId,
-      i
-    )
-    if (permanentUrl) {
-      uploadedUrls.push(permanentUrl)
+  if (shouldUploadOnIngest) {
+    for (let i = 0; i < sourceMediaUrls.length; i++) {
+      const permanentUrl = await uploadMediaToStorage(
+        supabase,
+        sourceMediaUrls[i],
+        igPostId,
+        i
+      )
+      if (permanentUrl) {
+        uploadedUrls.push(permanentUrl)
+      }
     }
   }
 
-  if (uploadedUrls.length === 0) {
+  if (shouldUploadOnIngest && uploadedUrls.length === 0) {
     return { success: false, reason: 'Failed to upload any media' }
   }
 
@@ -167,6 +124,8 @@ async function processPost(
     (postData.captionText as string | null) ??
     (postData.title as string | null) ??
     null
+
+  const mediaUrlsToStore = shouldUploadOnIngest ? uploadedUrls : []
 
   // Normalize timestamp to ISO string if possible
   let postedAt: string | null = null
@@ -190,7 +149,8 @@ async function processPost(
     original_caption: caption,
     ai_generated_caption: null,
     final_caption: null,
-    media_urls: uploadedUrls,
+    media_urls: mediaUrlsToStore,
+    source_media_urls: sourceMediaUrls,
     ig_post_id: igPostId,
     is_pinned: post.isPinned || false,
     posted_at_source: postedAt,
@@ -218,6 +178,7 @@ async function fetchApifyDataset(datasetId: string): Promise<ApifyInstagramPost[
 // POST /api/ingest?profile_id=xxx
 // Receives posts directly OR Apify webhook payload
 export async function POST(request: NextRequest) {
+  const startedAt = nowMs()
   try {
     const body = await request.json()
     const supabase = createServiceClient()
@@ -281,12 +242,21 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       message: `Ingested ${results.processed} posts, skipped ${results.skipped}, errors ${results.errors}`,
       ...results,
     })
+    logMetric('ingest_complete', {
+      processed: results.processed,
+      skipped: results.skipped,
+      errors: results.errors,
+      duration_ms: nowMs() - startedAt,
+      uploadOnApprove: featureFlags.uploadOnApprove,
+    })
+    return response
   } catch (error) {
     console.error('Ingest error:', error)
+    logMetric('ingest_error', { error: String(error), duration_ms: nowMs() - startedAt })
     return NextResponse.json(
       { error: 'Internal server error', details: String(error) },
       { status: 500 }

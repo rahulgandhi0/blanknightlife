@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from('event_discovery')
-    .select('id, profile_id, status, source_account, post_type, original_caption, ai_generated_caption, final_caption, media_urls, ig_post_id, scheduled_for, posted_at, meta_post_id, socialbu_post_id, posted_at_source, created_at, updated_at')
+    .select('id, profile_id, status, source_account, post_type, original_caption, ai_generated_caption, ai_context, final_caption, media_urls, source_media_urls, ig_post_id, scheduled_for, posted_at, meta_post_id, socialbu_post_id, posted_at_source, created_at, updated_at')
     .order('created_at', { ascending: false })
     .range(offset, offset + limit - 1)
 

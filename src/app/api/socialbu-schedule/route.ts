@@ -8,6 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SocialBuClient } from '@/lib/socialbu';
 import { createClient } from '@/lib/supabase/server';
+import { featureFlags } from '@/lib/feature-flags';
+import { uploadMediaToStorage } from '@/lib/media';
 import type { Database } from '@/types/database';
 
 export async function POST(request: NextRequest) {
@@ -81,7 +83,46 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!typedEvent.media_urls || typedEvent.media_urls.length === 0) {
+    let mediaUrls = typedEvent.media_urls || [];
+
+    if (featureFlags.uploadOnApprove && mediaUrls.length === 0) {
+      const sourceUrls = (typedEvent as Database['public']['Tables']['event_discovery']['Row'] & {
+        source_media_urls?: string[] | null
+      }).source_media_urls || [];
+
+      if (!sourceUrls || sourceUrls.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Event is missing source media URLs' },
+          { status: 400 }
+        );
+      }
+
+      const uploaded: string[] = [];
+      for (let i = 0; i < sourceUrls.length; i++) {
+        const uploadedUrl = await uploadMediaToStorage(supabase as any, sourceUrls[i], typedEvent.ig_post_id, i);
+        if (uploadedUrl) {
+          uploaded.push(uploadedUrl);
+        }
+      }
+
+      if (uploaded.length === 0) {
+        return NextResponse.json(
+          { success: false, error: 'Failed to upload media for scheduling' },
+          { status: 500 }
+        );
+      }
+
+      // Persist uploaded URLs for future use
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await (supabase as any)
+        .from('event_discovery')
+        .update({ media_urls: uploaded, updated_at: new Date().toISOString() })
+        .eq('id', eventId);
+
+      mediaUrls = uploaded;
+    }
+
+    if (!mediaUrls || mediaUrls.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Event must have at least one media file' },
         { status: 400 }
@@ -144,13 +185,13 @@ export async function POST(request: NextRequest) {
     
     console.log('📤 Step 2: Calling SocialBu API...');
     console.log('Post type:', typedEvent.post_type);
-    console.log('Media count:', typedEvent.media_urls.length);
+    console.log('Media count:', mediaUrls.length);
     console.log('Account IDs:', accountIds);
     
     try {
       // Handle carousels and multi-media posts differently
       // For carousels (multiple media), send individual requests to avoid "Maximum 1" error
-      if (typedEvent.media_urls.length > 1) {
+      if (mediaUrls.length > 1) {
         console.log('🎠 Carousel detected - sending individual requests per account');
         
         const results = [];
@@ -159,7 +200,7 @@ export async function POST(request: NextRequest) {
           const accountResult = await client.schedulePostWithMedia(
             [accountId], // Single account
             typedEvent.final_caption,
-            typedEvent.media_urls,
+            mediaUrls,
             new Date(typedEvent.scheduled_for),
             options,
             postbackUrl
@@ -195,7 +236,7 @@ export async function POST(request: NextRequest) {
         result = await client.schedulePostWithMedia(
           accountIds,
           typedEvent.final_caption,
-          typedEvent.media_urls,
+          mediaUrls,
           new Date(typedEvent.scheduled_for),
           options,
           postbackUrl

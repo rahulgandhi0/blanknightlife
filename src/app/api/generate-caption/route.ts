@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { rewriteCaption } from '@/lib/groq'
+import { featureFlags } from '@/lib/feature-flags'
+import { logMetric, nowMs } from '@/lib/metrics'
 import type { EventDiscovery } from '@/types/database'
 
 interface CaptionEdit {
@@ -11,9 +13,10 @@ interface CaptionEdit {
 // POST /api/generate-caption
 // Generate AI caption on-demand for a specific event
 export async function POST(request: NextRequest) {
+  const startedAt = nowMs()
   try {
     const body = await request.json()
-    const { eventId, context, useRL = true } = body
+    const { eventId, context, useRL = true, force = false } = body
 
     if (!eventId) {
       return NextResponse.json(
@@ -39,6 +42,25 @@ export async function POST(request: NextRequest) {
     }
 
     const event = data as EventDiscovery
+    const normalizedContext = (context || '').trim()
+
+    if (
+      featureFlags.captionCache &&
+      !force &&
+      event.ai_generated_caption &&
+      (event.ai_context || '') === normalizedContext
+    ) {
+      logMetric('caption_cache_hit', {
+        eventId,
+        duration_ms: nowMs() - startedAt,
+      })
+      return NextResponse.json({
+        success: true,
+        caption: event.ai_generated_caption,
+        event,
+        cached: true,
+      })
+    }
 
     // Fetch recent edits for RL (learn from past corrections)
     // Filter by profile_id to learn venue-specific style
@@ -66,7 +88,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Build context with learned examples
-    const fullContext = [context, learnedExamples].filter(Boolean).join('\n')
+    const fullContext = [normalizedContext, learnedExamples].filter(Boolean).join('\n')
 
     // Generate AI caption with optional context + learned patterns
     const aiCaption = await rewriteCaption(
@@ -81,6 +103,7 @@ export async function POST(request: NextRequest) {
       .update({
         ai_generated_caption: aiCaption,
         final_caption: aiCaption,
+        ai_context: normalizedContext,
       } as never)
       .eq('id', eventId)
       .select()
@@ -93,6 +116,11 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    logMetric('caption_generate', {
+      eventId,
+      duration_ms: nowMs() - startedAt,
+    })
+
     return NextResponse.json({
       success: true,
       caption: aiCaption,
@@ -100,6 +128,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Generate caption error:', error)
+    logMetric('caption_generate_error', { error: String(error), duration_ms: nowMs() - startedAt })
     return NextResponse.json(
       { error: 'Internal server error', details: String(error) },
       { status: 500 }

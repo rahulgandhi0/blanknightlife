@@ -142,10 +142,12 @@ CREATE TABLE event_discovery (
   -- Captions (original → AI → final)
   original_caption TEXT,
   ai_generated_caption TEXT,
+  ai_context TEXT,
   final_caption TEXT,
   
   -- Media
   media_urls TEXT[] NOT NULL,
+  source_media_urls TEXT[],
   ig_post_id TEXT NOT NULL UNIQUE,
   is_pinned BOOLEAN DEFAULT false,
   

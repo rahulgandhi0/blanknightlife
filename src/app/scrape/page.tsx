@@ -258,6 +258,25 @@ export default function ScrapePage() {
         : progress
     setProgress(mappedSteps)
 
+    if (data.async) {
+      setProgress((prev) =>
+        prev.map((p) => {
+          if (p.label === 'Run Apify') {
+            return { ...p, state: 'done', helper: data.runId ? `Run ${data.runId}` : 'Queued' }
+          }
+          if (p.label === 'Filter results') {
+            return { ...p, state: 'idle', helper: 'Awaiting Apify results' }
+          }
+          if (p.label === 'Ingest') {
+            return { ...p, state: 'idle', helper: 'Waiting for webhook' }
+          }
+          return p.state === 'idle' ? { ...p, state: 'done' } : p
+        })
+      )
+      setScrapeStatus(data.message || 'Scrape started')
+      return
+    }
+
     if (data.success) {
       setProgress((prev) =>
         prev.map((p) => {
