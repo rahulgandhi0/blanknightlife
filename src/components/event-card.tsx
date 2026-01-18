@@ -254,7 +254,7 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard, 
               className="h-8 text-xs bg-zinc-900 border border-zinc-800 flex-1 focus:border-violet-500/60 focus:ring-0"
             />
             <Button
-              onClick={handleGenerateCaption}
+              onClick={() => handleGenerateCaption()}
               disabled={isGenerating}
               size="sm"
               className="h-8 px-3 bg-violet-600 hover:bg-violet-500"
