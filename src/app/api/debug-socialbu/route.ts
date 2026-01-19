@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SocialBuClient } from '@/lib/socialbu';
 import { createClient } from '@/lib/supabase/server';
+import type { Profile } from '@/types/database';
 
 export async function GET(request: NextRequest) {
   try {
@@ -26,7 +27,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Compare and find mismatches
-    const analysis = profiles?.map(profile => {
+    const typedProfiles = profiles as Profile[] | null;
+    const analysis = typedProfiles?.map(profile => {
       const matchingAccount = socialBuAccounts.find(
         acc => acc.id === profile.socialbu_account_id
       );
