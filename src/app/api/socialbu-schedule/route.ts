@@ -181,12 +181,21 @@ export async function POST(request: NextRequest) {
     // For Instagram Reels
     if (typedEvent.post_type === 'reel') {
       options.share_reel_to_feed = true;
+      console.log('🎬 Reel detected - setting share_reel_to_feed=true');
+    }
+    
+    // For Instagram Carousels
+    if (typedEvent.post_type === 'carousel' || mediaUrls.length > 1) {
+      // Instagram carousels might need carousel_album flag
+      options.carousel_album = true;
+      console.log('🎠 Carousel detected - setting carousel_album=true');
     }
     
     console.log('📤 Step 2: Calling SocialBu API...');
     console.log('Post type:', typedEvent.post_type);
     console.log('Media count:', mediaUrls.length);
     console.log('Account IDs:', accountIds);
+    console.log('Options:', JSON.stringify(options));
     
     try {
       // Handle carousels and multi-media posts differently
@@ -208,6 +217,7 @@ export async function POST(request: NextRequest) {
           
           if (!accountResult.success) {
             console.error(`  ❌ Failed for account ${accountId}:`, accountResult.message);
+            console.error(`  ❌ Full error:`, JSON.stringify(accountResult, null, 2));
             // Continue with other accounts but track failures
           } else {
             console.log(`  ✅ Success for account ${accountId}:`, accountResult.post_id);
@@ -219,7 +229,10 @@ export async function POST(request: NextRequest) {
         // Check if at least one succeeded
         const successfulResults = results.filter(r => r.success);
         if (successfulResults.length === 0) {
-          throw new Error(`All accounts failed. First error: ${results[0]?.message || 'Unknown error'}`);
+          const firstError = results[0]?.message || 'Unknown error';
+          const allErrors = results.map(r => r.message).join('; ');
+          console.error('❌ All carousel/multi-media requests failed:', allErrors);
+          throw new Error(`All accounts failed for ${typedEvent.post_type}. Errors: ${allErrors}`);
         }
         
         // Use the first successful post ID
