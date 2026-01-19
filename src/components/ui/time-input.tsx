@@ -25,20 +25,19 @@ export function TimeInput({
   const [minuteDigit2, setMinuteDigit2] = useState('')
   const [meridiem, setMeridiem] = useState<'AM' | 'PM'>('PM')
   const [error, setError] = useState<string | null>(null)
+  const [isUserEditing, setIsUserEditing] = useState(false)
   
   const hourInput1Ref = useRef<HTMLInputElement>(null)
   const hourInput2Ref = useRef<HTMLInputElement>(null)
   const minuteInput1Ref = useRef<HTMLInputElement>(null)
   const minuteInput2Ref = useRef<HTMLInputElement>(null)
 
-  // Parse the value prop to populate inputs
+  // Parse the value prop to populate inputs - ONLY on mount or when explicitly changed externally
   useEffect(() => {
-    // Reconstruct current internal time to compare against prop
-    const currentInternal = `${hourDigit1}${hourDigit2}:${minuteDigit1}${minuteDigit2} ${meridiem}`
+    // Skip update if user is actively typing
+    if (isUserEditing) return
 
-    // Fix: Only update internal state if the prop value is meaningfully different
-    // This prevents the "echo" update that causes flickering/cursor jumps
-    if (value && value !== currentInternal) {
+    if (value) {
       const match = value.match(/(\d+):(\d+)\s*(AM|PM)/i)
       if (match) {
         const hours = match[1].padStart(2, '0')
@@ -52,7 +51,7 @@ export function TimeInput({
         setMeridiem(mer)
       }
     }
-  }, [value, hourDigit1, hourDigit2, minuteDigit1, minuteDigit2, meridiem])
+  }, [value, isUserEditing])
 
   const validateAndUpdate = (h1: string, h2: string, m1: string, m2: string, mer: 'AM' | 'PM') => {
     // All 4 digits must be filled
@@ -114,6 +113,9 @@ export function TimeInput({
     setter: (v: string) => void,
     nextRef?: React.RefObject<HTMLInputElement | null>
   ) => {
+    // Mark as user editing to prevent external updates
+    setIsUserEditing(true)
+    
     // Only allow digits
     const digit = value.replace(/\D/g, '').slice(-1)
     
@@ -133,7 +135,11 @@ export function TimeInput({
 
     // Validate when all digits are entered
     if (h1 && h2 && m1 && m2) {
-      validateAndUpdate(h1, h2, m1, m2, meridiem)
+      const isValid = validateAndUpdate(h1, h2, m1, m2, meridiem)
+      // Only mark as not editing if validation passed
+      if (isValid) {
+        setTimeout(() => setIsUserEditing(false), 100)
+      }
     } else {
       setError(null) // Clear error while typing
     }
@@ -164,17 +170,22 @@ export function TimeInput({
   }
 
   const toggleMeridiem = () => {
+    setIsUserEditing(true)
     const newMeridiem = meridiem === 'AM' ? 'PM' : 'AM'
     setMeridiem(newMeridiem)
     
     // Revalidate with new meridiem
     if (hourDigit1 && hourDigit2 && minuteDigit1 && minuteDigit2) {
-      validateAndUpdate(hourDigit1, hourDigit2, minuteDigit1, minuteDigit2, newMeridiem)
+      const isValid = validateAndUpdate(hourDigit1, hourDigit2, minuteDigit1, minuteDigit2, newMeridiem)
+      if (isValid) {
+        setTimeout(() => setIsUserEditing(false), 100)
+      }
     }
   }
 
   const handlePaste = (e: React.ClipboardEvent) => {
     e.preventDefault()
+    setIsUserEditing(true)
     const pasted = e.clipboardData.getData('text').replace(/\D/g, '')
     
     if (pasted.length === 4) {
@@ -182,7 +193,10 @@ export function TimeInput({
       setHourDigit2(pasted[1])
       setMinuteDigit1(pasted[2])
       setMinuteDigit2(pasted[3])
-      validateAndUpdate(pasted[0], pasted[1], pasted[2], pasted[3], meridiem)
+      const isValid = validateAndUpdate(pasted[0], pasted[1], pasted[2], pasted[3], meridiem)
+      if (isValid) {
+        setTimeout(() => setIsUserEditing(false), 100)
+      }
     }
   }
 

@@ -178,59 +178,79 @@ export class SocialBuClient {
    * Takes a URL, downloads it, uploads to SocialBu, returns upload_token
    */
   async uploadMediaFromUrl(mediaUrl: string): Promise<string> {
-    // Step 1: Download the media file
-    const fileResponse = await fetch(mediaUrl);
-    if (!fileResponse.ok) {
-      throw new Error(`Failed to download media from URL: ${mediaUrl}`);
-    }
-    const fileBlob = await fileResponse.blob();
-    
-    // Extract filename and MIME type
-    const urlParts = mediaUrl.split('/');
-    const filenameFromUrl = urlParts[urlParts.length - 1] || 'media.jpg';
-    // Remove query parameters from filename
-    const filename = filenameFromUrl.split('?')[0];
-    const mimeType = fileBlob.type || 'image/jpeg';
-
-    // Step 2: Initiate upload with SocialBu
-    const { signed_url, key } = await this.initiateMediaUpload(filename, mimeType);
-
-    // Step 3: Upload file to signed URL with required headers
-    const uploadResponse = await fetch(signed_url, {
-      method: 'PUT',
-      body: fileBlob,
-      headers: {
-        'Content-Type': mimeType,
-        'Content-Length': fileBlob.size.toString(),
-        'x-amz-acl': 'private',
-      },
-    });
-
-    if (!uploadResponse.ok) {
-      throw new Error(`Failed to upload file to signed URL: ${uploadResponse.statusText}`);
-    }
-
-    // Step 4: Poll for completion and get upload_token
-    let attempts = 0;
-    const maxAttempts = 30; // 30 seconds max
-    
-    while (attempts < maxAttempts) {
-      const status = await this.checkMediaUploadStatus(key);
-      
-      if (status.upload_token) {
-        return status.upload_token;
+    try {
+      // Step 1: Download the media file
+      console.log(`📥 Downloading media from: ${mediaUrl.substring(0, 80)}...`);
+      const fileResponse = await fetch(mediaUrl);
+      if (!fileResponse.ok) {
+        throw new Error(`Failed to download media (HTTP ${fileResponse.status}): ${mediaUrl}`);
       }
+      const fileBlob = await fileResponse.blob();
+      console.log(`✅ Downloaded ${(fileBlob.size / 1024 / 1024).toFixed(2)}MB (${fileBlob.type})`);
       
-      if (status.status === 'failed') {
-        throw new Error(`Media upload failed: ${status.error || 'Unknown error'}`);
+      // Extract filename and MIME type
+      const urlParts = mediaUrl.split('/');
+      const filenameFromUrl = urlParts[urlParts.length - 1] || 'media.jpg';
+      // Remove query parameters from filename
+      const filename = filenameFromUrl.split('?')[0];
+      const mimeType = fileBlob.type || 'image/jpeg';
+
+      // Step 2: Initiate upload with SocialBu
+      console.log(`📤 Initiating SocialBu upload for: ${filename}`);
+      const { signed_url, key } = await this.initiateMediaUpload(filename, mimeType);
+      console.log(`✅ Received signed URL with key: ${key}`);
+
+      // Step 3: Upload file to signed URL with required headers
+      console.log('📤 Uploading to signed URL...');
+      const uploadResponse = await fetch(signed_url, {
+        method: 'PUT',
+        body: fileBlob,
+        headers: {
+          'Content-Type': mimeType,
+          'Content-Length': fileBlob.size.toString(),
+          'x-amz-acl': 'private',
+        },
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Failed to upload file to signed URL (HTTP ${uploadResponse.status}): ${uploadResponse.statusText}`);
+      }
+      console.log('✅ File uploaded to signed URL');
+
+      // Step 4: Poll for completion and get upload_token
+      console.log('⏳ Polling for upload completion...');
+      let attempts = 0;
+      const maxAttempts = 30; // 30 seconds max
+      
+      while (attempts < maxAttempts) {
+        const status = await this.checkMediaUploadStatus(key);
+        
+        if (status.upload_token) {
+          console.log(`✅ Upload complete! Token: ${status.upload_token.substring(0, 20)}...`);
+          return status.upload_token;
+        }
+        
+        if (status.status === 'failed') {
+          throw new Error(`Media upload processing failed in SocialBu: ${status.error || 'Unknown error'}`);
+        }
+
+        console.log(`  Poll ${attempts + 1}/${maxAttempts}: status=${status.status}`);
+        
+        // Wait 1 second before checking again
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        attempts++;
       }
 
-      // Wait 1 second before checking again
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      attempts++;
+      throw new Error('Media upload timed out after 30 seconds. SocialBu may be processing the file.');
+      
+    } catch (error) {
+      console.error('❌ Media upload error:', error);
+      // Re-throw with more context
+      if (error instanceof Error) {
+        throw new Error(`Media upload failed: ${error.message}`);
+      }
+      throw error;
     }
-
-    throw new Error('Media upload timed out');
   }
 
   /**
@@ -238,37 +258,77 @@ export class SocialBuClient {
    * POST /api/v1/posts
    */
   async createPost(payload: CreatePostPayload): Promise<CreatePostResponse> {
-    const response = await fetch(`${this.baseUrl}/posts`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(payload),
-    });
+    try {
+      console.log('📤 Creating post in SocialBu with payload:', {
+        accounts: payload.accounts,
+        content_length: payload.content?.length,
+        publish_at: payload.publish_at,
+        attachments_count: payload.existing_attachments?.length,
+        has_options: !!payload.options,
+      });
+      
+      const response = await fetch(`${this.baseUrl}/posts`, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(payload),
+      });
 
-    const data = await response.json();
+      const data = await response.json();
+      
+      console.log('📥 SocialBu response:', {
+        status: response.status,
+        ok: response.ok,
+        data: data,
+      });
 
-    if (!response.ok) {
+      if (!response.ok) {
+        // Parse error details from SocialBu response
+        let errorMessage = data.message || 'Failed to create post';
+        const errors = data.errors || [response.statusText];
+        
+        // Add more context to common errors
+        if (response.status === 401 || response.status === 403) {
+          errorMessage = 'Authentication failed with SocialBu API';
+        } else if (response.status === 400) {
+          errorMessage = `Invalid request: ${data.message || 'Check post parameters'}`;
+        } else if (response.status === 422) {
+          errorMessage = `Validation error: ${data.message || 'Check media and content'}`;
+        }
+        
+        console.error('❌ SocialBu API error:', { status: response.status, message: errorMessage, errors });
+        
+        return {
+          success: false,
+          message: errorMessage,
+          errors: errors,
+        };
+      }
+
+      // Handle multi-account response: SocialBu returns an array of posts for multi-account requests
+      // For single account: data.id or data.post_id
+      // For multi-account: data.posts (array) - we'll use the first post's ID as primary
+      let postId: string | undefined;
+      if (data.posts && Array.isArray(data.posts) && data.posts.length > 0) {
+        postId = data.posts[0].id || data.posts[0].post_id;
+      } else {
+        postId = data.id || data.post_id;
+      }
+
+      console.log('✅ Post created successfully with ID:', postId);
+
+      return {
+        success: true,
+        post_id: postId,
+        message: 'Post scheduled successfully',
+      };
+    } catch (error) {
+      console.error('❌ Exception creating post:', error);
       return {
         success: false,
-        message: data.message || 'Failed to create post',
-        errors: data.errors || [response.statusText],
+        message: error instanceof Error ? error.message : 'Network error creating post',
+        errors: [String(error)],
       };
     }
-
-    // Handle multi-account response: SocialBu returns an array of posts for multi-account requests
-    // For single account: data.id or data.post_id
-    // For multi-account: data.posts (array) - we'll use the first post's ID as primary
-    let postId: string | undefined;
-    if (data.posts && Array.isArray(data.posts) && data.posts.length > 0) {
-      postId = data.posts[0].id || data.posts[0].post_id;
-    } else {
-      postId = data.id || data.post_id;
-    }
-
-    return {
-      success: true,
-      post_id: postId,
-      message: 'Post scheduled successfully',
-    };
   }
 
   /**
