@@ -274,25 +274,29 @@ export async function POST(request: NextRequest) {
     } catch (socialBuError) {
       // Step 4: Error Handling - Revert to 'approved' so user can retry
       console.error('❌ SocialBu API threw exception:', socialBuError);
+      console.error('❌ Full error object:', JSON.stringify(socialBuError, null, 2));
       
       // Extract more detailed error information
       let errorMessage = 'Failed to schedule post in SocialBu';
       let errorDetails = socialBuError instanceof Error ? socialBuError.message : String(socialBuError);
+      
+      // Log the raw error for debugging
+      console.log('🔍 Raw error message:', errorDetails);
       
       // Check if it's a network error
       if (socialBuError instanceof TypeError && socialBuError.message.includes('fetch')) {
         errorMessage = 'Network error connecting to SocialBu';
         errorDetails = 'Please check your internet connection and try again';
       }
-      // Check for common SocialBu API errors
-      else if (errorDetails.includes('Media upload')) {
+      // Check for common SocialBu API errors  
+      else if (errorDetails.toLowerCase().includes('media upload')) {
         errorMessage = 'Failed to upload media to SocialBu';
-      } else if (errorDetails.includes('authentication') || errorDetails.includes('unauthorized')) {
+      } else if (errorDetails.toLowerCase().includes('authentication') || errorDetails.toLowerCase().includes('unauthorized')) {
         errorMessage = 'SocialBu authentication failed';
         errorDetails = 'Please check your SocialBu API key configuration';
-      } else if (errorDetails.includes('account')) {
+      } else if (errorDetails.toLowerCase().includes('invalid') && errorDetails.toLowerCase().includes('account')) {
         errorMessage = 'Invalid or inactive SocialBu account';
-        errorDetails = 'Please verify your connected accounts in SocialBu';
+        errorDetails = `SocialBu error: ${errorDetails}`;
       }
       
       console.log('🔄 Reverting status to "approved" for retry...');
