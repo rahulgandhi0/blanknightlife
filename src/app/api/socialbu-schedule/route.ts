@@ -175,21 +175,28 @@ export async function POST(request: NextRequest) {
     let result;
     let socialBuPostId: string | number | null = null;
     
-    // Prepare platform-specific options
+    // Prepare platform-specific options based on post type
     const options: any = {};
     
-    // For Instagram Reels
+    // For Reels (Instagram, Facebook, etc.)
     if (typedEvent.post_type === 'reel') {
+      // Instagram: share to feed
       options.share_reel_to_feed = true;
-      console.log('🎬 Reel detected - setting share_reel_to_feed=true');
+      
+      // Facebook: requires post_as_reel flag
+      options.post_as_reel = true;
+      
+      // Optional: Add video title if available
+      if (typedEvent.final_caption) {
+        const firstLine = typedEvent.final_caption.split('\n')[0].slice(0, 100);
+        options.video_title = firstLine;
+      }
+      
+      console.log('🎬 Reel detected - setting reel-specific options');
     }
     
-    // For Instagram Carousels
-    if (typedEvent.post_type === 'carousel' || mediaUrls.length > 1) {
-      // Instagram carousels might need carousel_album flag
-      options.carousel_album = true;
-      console.log('🎠 Carousel detected - setting carousel_album=true');
-    }
+    // For TikTok (if platform detection is added later)
+    // options.privacy_status = 'PUBLIC'; // Required for TikTok
     
     console.log('📤 Step 2: Calling SocialBu API...');
     console.log('Post type:', typedEvent.post_type);
@@ -198,27 +205,41 @@ export async function POST(request: NextRequest) {
     console.log('Options:', JSON.stringify(options));
     
     try {
-      // Handle carousels and multi-media posts differently
-      // For carousels (multiple media), send individual requests to avoid "Maximum 1" error
-      if (mediaUrls.length > 1) {
-        console.log('🎠 Carousel detected - sending individual requests per account');
+      // CRITICAL FIX: Upload media ONCE and reuse tokens for all accounts
+      // This prevents redundant uploads, timeouts, and "Maximum 1" errors
+      console.log('📤 Step 2.1: Uploading media to SocialBu (once)...');
+      const uploadTokens = await Promise.all(
+        mediaUrls.map(async (mediaUrl) => {
+          const token = await client.uploadMediaFromUrl(mediaUrl);
+          return { upload_token: token };
+        })
+      );
+      console.log(`✅ Uploaded ${uploadTokens.length} media files. Tokens ready for reuse.`);
+      
+      // Format date as YYYY-MM-DD HH:MM:SS (UTC)
+      const publish_at = new Date(typedEvent.scheduled_for).toISOString().slice(0, 19).replace('T', ' ');
+      
+      // Handle multi-account or multi-media posts by sending individual requests with pre-uploaded tokens
+      if (accountIds.length > 1 || mediaUrls.length > 1) {
+        console.log(`🔁 Multi-account or multi-media - sending ${accountIds.length} requests with reused tokens`);
         
         const results = [];
         for (const accountId of accountIds) {
-          console.log(`  Scheduling for account ${accountId}...`);
-          const accountResult = await client.schedulePostWithMedia(
-            [accountId], // Single account
-            typedEvent.final_caption,
-            mediaUrls,
-            new Date(typedEvent.scheduled_for),
+          console.log(`  📤 Scheduling for account ${accountId}...`);
+          
+          // Create post with pre-uploaded tokens (NO re-upload!)
+          const accountResult = await client.createPost({
+            accounts: [accountId],
+            content: typedEvent.final_caption,
+            publish_at,
+            existing_attachments: uploadTokens,
             options,
-            postbackUrl
-          );
+            postback_url: postbackUrl,
+          });
           
           if (!accountResult.success) {
             console.error(`  ❌ Failed for account ${accountId}:`, accountResult.message);
             console.error(`  ❌ Full error:`, JSON.stringify(accountResult, null, 2));
-            // Continue with other accounts but track failures
           } else {
             console.log(`  ✅ Success for account ${accountId}:`, accountResult.post_id);
           }
@@ -229,9 +250,8 @@ export async function POST(request: NextRequest) {
         // Check if at least one succeeded
         const successfulResults = results.filter(r => r.success);
         if (successfulResults.length === 0) {
-          const firstError = results[0]?.message || 'Unknown error';
           const allErrors = results.map(r => r.message).join('; ');
-          console.error('❌ All carousel/multi-media requests failed:', allErrors);
+          console.error('❌ All account requests failed:', allErrors);
           throw new Error(`All accounts failed for ${typedEvent.post_type}. Errors: ${allErrors}`);
         }
         
@@ -244,16 +264,16 @@ export async function POST(request: NextRequest) {
         };
         
       } else {
-        // Single media - can send to multiple accounts at once
-        console.log('🖼️ Single media - sending multi-account request');
-        result = await client.schedulePostWithMedia(
-          accountIds,
-          typedEvent.final_caption,
-          mediaUrls,
-          new Date(typedEvent.scheduled_for),
+        // Single account + single/multiple media - can send in one request
+        console.log('🖼️ Single account request with pre-uploaded media');
+        result = await client.createPost({
+          accounts: accountIds,
+          content: typedEvent.final_caption,
+          publish_at,
+          existing_attachments: uploadTokens,
           options,
-          postbackUrl
-        );
+          postback_url: postbackUrl,
+        });
         
         socialBuPostId = result.post_id || null;
       }
