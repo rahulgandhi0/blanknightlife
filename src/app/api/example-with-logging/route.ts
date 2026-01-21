@@ -20,7 +20,7 @@ export const GET = withApiHandler(
     // Extract query params
     const userId = request.nextUrl.searchParams.get('userId');
     
-    logger.info('Processing example request', { userId });
+    logger.info('Processing example request', { userId: userId || undefined });
 
     // Validate input
     if (!userId) {
@@ -35,7 +35,7 @@ export const GET = withApiHandler(
     }
 
     // Example: Database operation with timing
-    logger.debug('Fetching user data from database', { userId });
+    logger.debug('Fetching user data from database', { userId: userId || undefined });
     const dbTimer = logger.time('Database fetch');
     
     // Simulate database call
@@ -43,7 +43,7 @@ export const GET = withApiHandler(
     const userData = { id: userId, name: 'John Doe', email: 'john@example.com' };
     
     dbTimer(); // Logs: "[TIMER END] Database fetch" with durationMs
-    logger.info('User data fetched successfully', { userId });
+    logger.info('User data fetched successfully', { userId: userId || undefined });
 
     // Example: External API call with SocialBuClient
     logger.debug('Fetching SocialBu accounts');
@@ -56,7 +56,7 @@ export const GET = withApiHandler(
       
       const accounts = await socialBuClient.getAccounts();
       logger.info('SocialBu accounts fetched', { 
-        userId,
+        userId: userId || undefined,
         accountCount: accounts.length,
       });
 
@@ -79,7 +79,7 @@ export const GET = withApiHandler(
 
     } catch (error) {
       // Specific error handling for known error types
-      logger.error('Failed to fetch SocialBu accounts', { userId }, error as Error);
+      logger.error('Failed to fetch SocialBu accounts', { userId: userId || undefined }, error as Error);
       
       // Return a user-friendly error
       // (The wrapper will catch this and log it, but we can handle it gracefully)
