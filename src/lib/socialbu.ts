@@ -540,7 +540,7 @@ export class SocialBuClient {
 
       logger.info('[SocialBu] Post created successfully', {
         ...this.context,
-        postId,
+        postId: postId || undefined,
       });
 
       return {
@@ -580,7 +580,7 @@ export class SocialBuClient {
       const error = new Error(`Failed to fetch post metrics: ${response.statusText}`);
       logger.error('Failed to fetch post metrics', {
         ...this.context,
-        postId,
+        postId: String(postId),
         statusCode: response.status,
         errorBody,
       }, error);
@@ -617,7 +617,7 @@ export class SocialBuClient {
       const error = new Error(`Failed to fetch published posts: ${response.statusText}`);
       logger.error('Failed to fetch published posts', {
         ...this.context,
-        accountId,
+        accountId: accountId ? String(accountId) : undefined,
         limit,
         statusCode: response.status,
         errorBody,
@@ -656,7 +656,7 @@ export class SocialBuClient {
       const error = new Error(`Failed to fetch scheduled posts: ${response.statusText}`);
       logger.error('Failed to fetch scheduled posts', {
         ...this.context,
-        accountId,
+        accountId: accountId ? String(accountId) : undefined,
         limit,
         statusCode: response.status,
         errorBody,
@@ -687,7 +687,7 @@ export class SocialBuClient {
       const error = new Error(`Failed to fetch post: ${response.statusText}`);
       logger.error('Failed to fetch post', {
         ...this.context,
-        postId,
+        postId: String(postId),
         statusCode: response.status,
         errorBody,
       }, error);
@@ -718,7 +718,7 @@ export class SocialBuClient {
   ): Promise<{ success: boolean; message?: string }> {
     logger.info('[SocialBu] Updating post', {
       ...this.context,
-      postId,
+      postId: String(postId),
       hasContent: !!updates.content,
       hasPublishAt: !!updates.publish_at,
     });
@@ -738,7 +738,7 @@ export class SocialBuClient {
     if (!response.ok) {
       logger.error('[SocialBu] Update post failed', {
         ...this.context,
-        postId,
+        postId: String(postId),
         statusCode: response.status,
         responseData: data,
       });
@@ -751,7 +751,7 @@ export class SocialBuClient {
 
     logger.info('[SocialBu] Post updated successfully', {
       ...this.context,
-      postId,
+      postId: String(postId),
     });
 
     return {
@@ -767,7 +767,7 @@ export class SocialBuClient {
   async deletePost(postId: number | string): Promise<{ success: boolean; message?: string }> {
     logger.info('[SocialBu] Deleting post', {
       ...this.context,
-      postId,
+      postId: String(postId),
     });
 
     const response = await this.fetchWithLogging(
@@ -784,7 +784,7 @@ export class SocialBuClient {
     if (!response.ok) {
       logger.error('[SocialBu] Delete post failed', {
         ...this.context,
-        postId,
+        postId: String(postId),
         statusCode: response.status,
         responseData: data,
       });
@@ -797,7 +797,7 @@ export class SocialBuClient {
 
     logger.info('[SocialBu] Post deleted successfully', {
       ...this.context,
-      postId,
+      postId: String(postId),
     });
 
     return {
