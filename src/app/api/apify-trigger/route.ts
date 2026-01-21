@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
-import { featureFlags } from '@/lib/feature-flags'
-import { logMetric, nowMs } from '@/lib/metrics'
 import type { ApifyInstagramPost } from '@/types/apify'
 
 type StepStatus = 'pending' | 'running' | 'done' | 'error'
@@ -21,63 +19,6 @@ const stepList = (overrides?: Partial<Step>[]) =>
 
 const updateStep = (steps: Step[], label: string, status: StepStatus, info?: string) =>
   steps.map((s) => (s.label === label ? { ...s, status, info } : s))
-
-const resolveBaseUrl = (request: NextRequest): string => {
-  try {
-    return new URL(request.url).origin
-  } catch {
-    const localPort = process.env.PORT || process.env.NEXT_PUBLIC_PORT || '3000'
-    return (
-      process.env.NEXT_PUBLIC_BASE_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${localPort}`)
-    )
-  }
-}
-
-const buildWebhookConfig = (requestUrl: string) => {
-  const webhook = {
-    eventTypes: ['ACTOR.RUN.SUCCEEDED'],
-    requestUrl,
-    ...(process.env.APIFY_WEBHOOK_SECRET ? { secret: process.env.APIFY_WEBHOOK_SECRET } : {}),
-  }
-  return [webhook]
-}
-
-const runActorAsync = async (
-  actorId: string,
-  input: Record<string, unknown>,
-  profileId: string,
-  request: NextRequest
-) => {
-  const token = process.env.APIFY_API_TOKEN
-  if (!token) {
-    throw new Error('APIFY_API_TOKEN missing')
-  }
-
-  const baseUrl = resolveBaseUrl(request)
-  const webhookUrl = `${baseUrl}/api/ingest?profile_id=${profileId}`
-  const runPayload = {
-    ...input,
-    webhooks: buildWebhookConfig(webhookUrl),
-  }
-
-  const resp = await fetch(`https://api.apify.com/v2/acts/${actorId}/runs?token=${token}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(runPayload),
-  })
-
-  if (!resp.ok) {
-    const err = await resp.text()
-    throw new Error(err || 'Apify async run failed')
-  }
-
-  const data = await resp.json()
-  const runId = data?.data?.id || null
-  const datasetId = data?.data?.defaultDatasetId || null
-
-  return { runId, datasetId }
-}
 
 // Log scrape to scrape_history table
 async function logScrapeHistory(
@@ -194,7 +135,6 @@ async function handleSinglePost(
   logs: string[],
   log: (msg: string) => void
 ) {
-  const startedAt = nowMs()
   const { postUrl, shortcode, profile_id } = body
 
   if (!profile_id) {
@@ -210,6 +150,20 @@ async function handleSinglePost(
     steps = updateStep(steps, 'Run Apify', 'error', 'APIFY_API_TOKEN missing')
     return NextResponse.json({ error: 'APIFY_API_TOKEN missing', steps, logs }, { status: 500 })
   }
+
+  // Get base URL for ingest
+  const origin = (() => {
+    try {
+      return new URL(request.url).origin
+    } catch {
+      return null
+    }
+  })()
+  const localPort = process.env.PORT || process.env.NEXT_PUBLIC_PORT || '3000'
+  const baseUrl =
+    origin ||
+    process.env.NEXT_PUBLIC_BASE_URL ||
+    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${localPort}`)
 
   steps = updateStep(steps, 'Run Apify', 'running', 'Fetching single post')
 
@@ -227,32 +181,7 @@ async function handleSinglePost(
     }
 
     log(`Calling Apify actor ${actorId}`)
-
-    if (featureFlags.asyncApify) {
-      const { runId, datasetId } = await runActorAsync(actorId, input, profile_id, request)
-      steps = updateStep(steps, 'Run Apify', 'done', `Queued run ${runId || ''}`.trim())
-      steps = updateStep(steps, 'Filter results', 'pending', 'Awaiting Apify results')
-      steps = updateStep(steps, 'Ingest', 'pending', 'Awaiting webhook')
-      log(`Apify run queued: ${runId}`)
-      logMetric('apify_trigger_async', {
-        mode: 'single',
-        runId,
-        datasetId,
-        duration_ms: nowMs() - startedAt,
-      })
-      return NextResponse.json({
-        success: true,
-        async: true,
-        runId,
-        datasetId,
-        message: 'Scrape started. Results will appear after ingest completes.',
-        steps,
-        logs,
-      })
-    }
-
-    const baseUrl = resolveBaseUrl(request)
-
+    
     const resp = await fetch(`https://api.apify.com/v2/acts/${actorId}/run-sync-get-dataset-items?token=${token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -269,7 +198,7 @@ async function handleSinglePost(
     const items = await resp.json()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const rawPosts: any[] = Array.isArray(items) ? items : []
-
+    
     log(`Apify returned ${rawPosts.length} items`)
     steps = updateStep(steps, 'Run Apify', 'done', `Found ${rawPosts.length}`)
 
@@ -315,11 +244,6 @@ async function handleSinglePost(
       'success'
     )
 
-    logMetric('apify_trigger_sync', {
-      mode: 'single',
-      duration_ms: nowMs() - startedAt,
-    })
-
     return NextResponse.json({
       success: true,
       found: 1,
@@ -340,11 +264,6 @@ async function handleSinglePost(
       'error',
       String(error)
     )
-    logMetric('apify_trigger_error', {
-      mode: 'single',
-      error: String(error),
-      duration_ms: nowMs() - startedAt,
-    })
     
     return NextResponse.json({ error: 'Internal error', details: String(error), steps, logs }, { status: 500 })
   }
@@ -353,7 +272,6 @@ async function handleSinglePost(
 export async function POST(request: NextRequest) {
   const logs: string[] = []
   let steps = stepList()
-  const startedAt = nowMs()
 
   const log = (msg: string) => {
     logs.push(msg)
@@ -411,64 +329,6 @@ export async function POST(request: NextRequest) {
       origin ||
       process.env.NEXT_PUBLIC_BASE_URL ||
       (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : `http://localhost:${localPort}`)
-
-    if (featureFlags.asyncApify) {
-      const profileUrl = `https://www.instagram.com/${cleanHandle}/`
-      const inputPrimary = {
-        directUrls: [profileUrl],
-        resultsType: 'posts',
-        resultsLimit: 50,
-        onlyPostsNewerThan: onlyPostsNewerThan,
-        proxy: { useApifyProxy: true },
-      }
-      const inputFallback = {
-        username: [cleanHandle],
-        resultsType: 'posts',
-        resultsLimit: 50,
-        scrapePostsFromLastNDays: Math.max(1, Math.ceil(hours / 24)),
-        proxy: { useApifyProxy: true },
-      }
-
-      steps = updateStep(steps, 'Run Apify', 'running', `Actor: ${primaryActor}`)
-      log(`Running Apify actor ${primaryActor} (async) for @${cleanHandle}`)
-
-      let fallbackUsed = false
-      let runInfo: { runId: string | null; datasetId: string | null }
-
-      try {
-        runInfo = await runActorAsync(primaryActor, inputPrimary, profile_id, request)
-        log(`Queued run ${runInfo.runId} (primary actor)`)
-      } catch (err) {
-        fallbackUsed = true
-        log(`Primary actor failed: ${String(err)}`)
-        steps = updateStep(steps, 'Run Apify', 'running', `Retrying with ${fallbackActor}`)
-        runInfo = await runActorAsync(fallbackActor, inputFallback, profile_id, request)
-        log(`Queued run ${runInfo.runId} (fallback actor)`)
-      }
-
-      steps = updateStep(steps, 'Run Apify', 'done', `Queued run ${runInfo.runId || ''}`.trim())
-      steps = updateStep(steps, 'Filter results', 'pending', 'Awaiting Apify results')
-      steps = updateStep(steps, 'Ingest', 'pending', 'Awaiting webhook')
-
-      logMetric('apify_trigger_async', {
-        mode: 'profile',
-        runId: runInfo.runId,
-        datasetId: runInfo.datasetId,
-        fallbackUsed,
-        duration_ms: nowMs() - startedAt,
-      })
-
-      return NextResponse.json({
-        success: true,
-        async: true,
-        runId: runInfo.runId,
-        datasetId: runInfo.datasetId,
-        message: 'Scrape started. Results will appear after ingest completes.',
-        steps,
-        logs,
-        fallbackUsed,
-      })
-    }
 
     const callActor = async (actorId: string, useInstagramScraper: boolean) => {
       const profileUrl = `https://www.instagram.com/${cleanHandle}/`
@@ -629,14 +489,6 @@ export async function POST(request: NextRequest) {
       ingestData.processed > 0 ? 'success' : 'partial'
     )
 
-    logMetric('apify_trigger_sync', {
-      mode: 'profile',
-      found: filteredAndRecent.length,
-      processed: ingestData.processed || 0,
-      fallbackUsed,
-      duration_ms: nowMs() - startedAt,
-    })
-
     return NextResponse.json({
       success: true,
       found: filteredAndRecent.length,
@@ -649,11 +501,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     steps = updateStep(steps, 'Run Apify', 'error', 'Unexpected error')
     logs.push(`Error: ${String(error)}`)
-    logMetric('apify_trigger_error', {
-      mode: 'profile',
-      error: String(error),
-      duration_ms: nowMs() - startedAt,
-    })
     
     return NextResponse.json({ error: 'Internal error', details: String(error), steps, logs }, { status: 500 })
   }

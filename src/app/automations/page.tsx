@@ -213,11 +213,7 @@ export default function AutomationsPage() {
   const runNow = async (automation: ScrapeAutomation) => {
     setRunningId(automation.id)
     try {
-      await fetch('/api/automations/run-now', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: automation.id }),
-      })
+      await fetch(`/api/automations/trigger?force_id=${automation.id}`)
       await fetchAutomations()
       await fetchScrapeHistory()
     } catch (error) {

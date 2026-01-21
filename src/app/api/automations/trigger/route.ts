@@ -2,7 +2,7 @@
  * GET /api/automations/trigger
  * 
  * Trigger endpoint for running due automations.
- * Call this via Vercel Cron or external scheduler every 30 minutes.
+ * Call this via Vercel Cron or external scheduler every 15 minutes.
  * 
  * Query params:
  * - secret: Optional secret key for authentication
@@ -159,8 +159,6 @@ export async function GET(request: NextRequest) {
 
         const scrapeData = await scrapeRes.json()
         const success = scrapeData.success === true
-        const isAsync = scrapeData.async === true
-        const runStatus = isAsync ? 'running' : success ? 'success' : 'failed'
 
         // Calculate next run anchored to previous scheduled time to prevent drift
         const nextRunAt = calculateNextRun(
@@ -175,14 +173,11 @@ export async function GET(request: NextRequest) {
           .from('scrape_automations')
           .update({
             last_run_at: new Date().toISOString(),
-            last_run_status: runStatus,
+            last_run_status: success ? 'success' : 'failed',
             last_run_result: {
               found: scrapeData.found || 0,
               processed: scrapeData.ingestResult?.processed || 0,
               error: scrapeData.error || null,
-              async: isAsync,
-              runId: scrapeData.runId || null,
-              datasetId: scrapeData.datasetId || null,
             },
             next_run_at: nextRunAt.toISOString(),
             run_count: (automation.run_count || 0) + 1,
@@ -193,14 +188,12 @@ export async function GET(request: NextRequest) {
         results.push({
           id: automationId,
           account: accountHandle,
-          status: runStatus,
+          status: success ? 'success' : 'failed',
           details: {
             found: scrapeData.found || 0,
             processed: scrapeData.ingestResult?.processed || 0,
             nextRun: nextRunAt.toISOString(),
             sinceHours,
-            async: isAsync,
-            runId: scrapeData.runId || null,
           },
         })
       } catch (err) {

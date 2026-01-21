@@ -12,7 +12,7 @@ import { Calendar } from '@/components/ui/calendar'
 import { TimeInput } from '@/components/ui/time-input'
 import { MediaViewerModal } from '@/components/ui/media-viewer-modal'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Calendar as CalendarIcon, Check, X, Sparkles, Wand2, Loader2, Film, Images, RefreshCw } from 'lucide-react'
+import { Calendar as CalendarIcon, Check, X, Sparkles, Wand2, Loader2, Film, Images } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { EventDiscovery } from '@/types/database'
 
@@ -60,10 +60,7 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard, 
     avgLength: number
   } | null>(null)
 
-  const mediaUrls =
-    event.media_urls && event.media_urls.length > 0
-      ? event.media_urls
-      : (event.source_media_urls || [])
+  const mediaUrls = event.media_urls || []
   const hasMultipleImages = mediaUrls.length > 1
   const hasAiCaption = !!event.ai_generated_caption
 
@@ -88,7 +85,7 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard, 
         : 'text-red-400'
 
 
-  const handleGenerateCaption = async (force = false) => {
+  const handleGenerateCaption = async () => {
     setIsGenerating(true)
     try {
       const response = await fetch('/api/generate-caption', {
@@ -97,7 +94,6 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard, 
         body: JSON.stringify({
           eventId: event.id,
           context: context.trim() || undefined,
-          force,
         }),
       })
 
@@ -254,26 +250,16 @@ export const EventCard = memo(function EventCard({ event, onApprove, onDiscard, 
               className="h-8 text-xs bg-zinc-900 border border-zinc-800 flex-1 focus:border-violet-500/60 focus:ring-0"
             />
             <Button
-              onClick={() => handleGenerateCaption()}
+              onClick={handleGenerateCaption}
               disabled={isGenerating}
               size="sm"
               className="h-8 px-3 bg-violet-600 hover:bg-violet-500"
             >
-          {isGenerating ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          ) : (
-            <Wand2 className="h-3.5 w-3.5" />
-          )}
-        </Button>
-        <Button
-          onClick={() => handleGenerateCaption(true)}
-          disabled={isGenerating}
-          size="sm"
-          variant="outline"
-          className="h-8 px-3 border-zinc-800 text-zinc-300 hover:text-white"
-          title="New variation"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
+              {isGenerating ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Wand2 className="h-3.5 w-3.5" />
+              )}
             </Button>
           </div>
         </div>

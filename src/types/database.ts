@@ -24,10 +24,8 @@ export interface EventDiscovery {
   post_type: PostType
   original_caption: string | null
   ai_generated_caption: string | null
-  ai_context: string | null
   final_caption: string | null
   media_urls: string[]
-  source_media_urls: string[] | null
   ig_post_id: string
   is_pinned: boolean
   posted_at_source: string | null
@@ -110,10 +108,8 @@ export interface Database {
           post_type: PostType
           original_caption?: string | null
           ai_generated_caption?: string | null
-          ai_context?: string | null
           final_caption?: string | null
           media_urls: string[]
-          source_media_urls?: string[] | null
           ig_post_id: string
           is_pinned?: boolean
           posted_at_source?: string | null
@@ -135,10 +131,8 @@ export interface Database {
           post_type?: PostType
           original_caption?: string | null
           ai_generated_caption?: string | null
-          ai_context?: string | null
           final_caption?: string | null
           media_urls?: string[]
-          source_media_urls?: string[] | null
           ig_post_id?: string
           is_pinned?: boolean
           posted_at_source?: string | null

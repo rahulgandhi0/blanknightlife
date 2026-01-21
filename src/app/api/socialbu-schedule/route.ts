@@ -8,8 +8,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { SocialBuClient } from '@/lib/socialbu';
 import { createClient } from '@/lib/supabase/server';
-import { featureFlags } from '@/lib/feature-flags';
-import { uploadMediaToStorage } from '@/lib/media';
 import type { Database } from '@/types/database';
 
 export async function POST(request: NextRequest) {
@@ -83,46 +81,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    let mediaUrls = typedEvent.media_urls || [];
-
-    if (featureFlags.uploadOnApprove && mediaUrls.length === 0) {
-      const sourceUrls = (typedEvent as Database['public']['Tables']['event_discovery']['Row'] & {
-        source_media_urls?: string[] | null
-      }).source_media_urls || [];
-
-      if (!sourceUrls || sourceUrls.length === 0) {
-        return NextResponse.json(
-          { success: false, error: 'Event is missing source media URLs' },
-          { status: 400 }
-        );
-      }
-
-      const uploaded: string[] = [];
-      for (let i = 0; i < sourceUrls.length; i++) {
-        const uploadedUrl = await uploadMediaToStorage(supabase as any, sourceUrls[i], typedEvent.ig_post_id, i);
-        if (uploadedUrl) {
-          uploaded.push(uploadedUrl);
-        }
-      }
-
-      if (uploaded.length === 0) {
-        return NextResponse.json(
-          { success: false, error: 'Failed to upload media for scheduling' },
-          { status: 500 }
-        );
-      }
-
-      // Persist uploaded URLs for future use
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      await (supabase as any)
-        .from('event_discovery')
-        .update({ media_urls: uploaded, updated_at: new Date().toISOString() })
-        .eq('id', eventId);
-
-      mediaUrls = uploaded;
-    }
-
-    if (!mediaUrls || mediaUrls.length === 0) {
+    if (!typedEvent.media_urls || typedEvent.media_urls.length === 0) {
       return NextResponse.json(
         { success: false, error: 'Event must have at least one media file' },
         { status: 400 }
@@ -175,71 +134,40 @@ export async function POST(request: NextRequest) {
     let result;
     let socialBuPostId: string | number | null = null;
     
-    // Prepare platform-specific options based on post type
+    // Prepare platform-specific options
     const options: any = {};
     
-    // For Reels (Instagram, Facebook, etc.)
+    // For Instagram Reels
     if (typedEvent.post_type === 'reel') {
-      // Instagram: share to feed
       options.share_reel_to_feed = true;
-      
-      // Facebook: requires post_as_reel flag
-      options.post_as_reel = true;
-      
-      // Optional: Add video title if available
-      if (typedEvent.final_caption) {
-        const firstLine = typedEvent.final_caption.split('\n')[0].slice(0, 100);
-        options.video_title = firstLine;
-      }
-      
-      console.log('🎬 Reel detected - setting reel-specific options');
     }
-    
-    // For TikTok (if platform detection is added later)
-    // options.privacy_status = 'PUBLIC'; // Required for TikTok
     
     console.log('📤 Step 2: Calling SocialBu API...');
     console.log('Post type:', typedEvent.post_type);
-    console.log('Media count:', mediaUrls.length);
+    console.log('Media count:', typedEvent.media_urls.length);
     console.log('Account IDs:', accountIds);
-    console.log('Options:', JSON.stringify(options));
     
     try {
-      // CRITICAL FIX: Upload media ONCE and reuse tokens for all accounts
-      // This prevents redundant uploads, timeouts, and "Maximum 1" errors
-      console.log('📤 Step 2.1: Uploading media to SocialBu (once)...');
-      const uploadTokens = await Promise.all(
-        mediaUrls.map(async (mediaUrl) => {
-          const token = await client.uploadMediaFromUrl(mediaUrl);
-          return { upload_token: token };
-        })
-      );
-      console.log(`✅ Uploaded ${uploadTokens.length} media files. Tokens ready for reuse.`);
-      
-      // Format date as YYYY-MM-DD HH:MM:SS (UTC)
-      const publish_at = new Date(typedEvent.scheduled_for).toISOString().slice(0, 19).replace('T', ' ');
-      
-      // Handle multi-account or multi-media posts by sending individual requests with pre-uploaded tokens
-      if (accountIds.length > 1 || mediaUrls.length > 1) {
-        console.log(`🔁 Multi-account or multi-media - sending ${accountIds.length} requests with reused tokens`);
+      // Handle carousels and multi-media posts differently
+      // For carousels (multiple media), send individual requests to avoid "Maximum 1" error
+      if (typedEvent.media_urls.length > 1) {
+        console.log('🎠 Carousel detected - sending individual requests per account');
         
         const results = [];
         for (const accountId of accountIds) {
-          console.log(`  📤 Scheduling for account ${accountId}...`);
-          
-          // Create post with pre-uploaded tokens (NO re-upload!)
-          const accountResult = await client.createPost({
-            accounts: [accountId],
-            content: typedEvent.final_caption,
-            publish_at,
-            existing_attachments: uploadTokens,
+          console.log(`  Scheduling for account ${accountId}...`);
+          const accountResult = await client.schedulePostWithMedia(
+            [accountId], // Single account
+            typedEvent.final_caption,
+            typedEvent.media_urls,
+            new Date(typedEvent.scheduled_for),
             options,
-            postback_url: postbackUrl,
-          });
+            postbackUrl
+          );
           
           if (!accountResult.success) {
             console.error(`  ❌ Failed for account ${accountId}:`, accountResult.message);
-            console.error(`  ❌ Full error:`, JSON.stringify(accountResult, null, 2));
+            // Continue with other accounts but track failures
           } else {
             console.log(`  ✅ Success for account ${accountId}:`, accountResult.post_id);
           }
@@ -250,9 +178,7 @@ export async function POST(request: NextRequest) {
         // Check if at least one succeeded
         const successfulResults = results.filter(r => r.success);
         if (successfulResults.length === 0) {
-          const allErrors = results.map(r => r.message).join('; ');
-          console.error('❌ All account requests failed:', allErrors);
-          throw new Error(`All accounts failed for ${typedEvent.post_type}. Errors: ${allErrors}`);
+          throw new Error(`All accounts failed. First error: ${results[0]?.message || 'Unknown error'}`);
         }
         
         // Use the first successful post ID
@@ -264,16 +190,16 @@ export async function POST(request: NextRequest) {
         };
         
       } else {
-        // Single account + single/multiple media - can send in one request
-        console.log('🖼️ Single account request with pre-uploaded media');
-        result = await client.createPost({
-          accounts: accountIds,
-          content: typedEvent.final_caption,
-          publish_at,
-          existing_attachments: uploadTokens,
+        // Single media - can send to multiple accounts at once
+        console.log('🖼️ Single media - sending multi-account request');
+        result = await client.schedulePostWithMedia(
+          accountIds,
+          typedEvent.final_caption,
+          typedEvent.media_urls,
+          new Date(typedEvent.scheduled_for),
           options,
-          postback_url: postbackUrl,
-        });
+          postbackUrl
+        );
         
         socialBuPostId = result.post_id || null;
       }
@@ -307,31 +233,6 @@ export async function POST(request: NextRequest) {
     } catch (socialBuError) {
       // Step 4: Error Handling - Revert to 'approved' so user can retry
       console.error('❌ SocialBu API threw exception:', socialBuError);
-      console.error('❌ Full error object:', JSON.stringify(socialBuError, null, 2));
-      
-      // Extract more detailed error information
-      let errorMessage = 'Failed to schedule post in SocialBu';
-      let errorDetails = socialBuError instanceof Error ? socialBuError.message : String(socialBuError);
-      
-      // Log the raw error for debugging
-      console.log('🔍 Raw error message:', errorDetails);
-      
-      // Check if it's a network error
-      if (socialBuError instanceof TypeError && socialBuError.message.includes('fetch')) {
-        errorMessage = 'Network error connecting to SocialBu';
-        errorDetails = 'Please check your internet connection and try again';
-      }
-      // Check for common SocialBu API errors  
-      else if (errorDetails.toLowerCase().includes('media upload')) {
-        errorMessage = 'Failed to upload media to SocialBu';
-      } else if (errorDetails.toLowerCase().includes('authentication') || errorDetails.toLowerCase().includes('unauthorized')) {
-        errorMessage = 'SocialBu authentication failed';
-        errorDetails = 'Please check your SocialBu API key configuration';
-      } else if (errorDetails.toLowerCase().includes('invalid') && errorDetails.toLowerCase().includes('account')) {
-        errorMessage = 'Invalid or inactive SocialBu account';
-        errorDetails = `SocialBu error: ${errorDetails}`;
-      }
-      
       console.log('🔄 Reverting status to "approved" for retry...');
       
       try {
@@ -350,8 +251,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          error: errorMessage,
-          details: errorDetails,
+          error: 'Failed to schedule post in SocialBu',
+          details: socialBuError instanceof Error ? socialBuError.message : String(socialBuError),
         },
         { status: 500 }
       );
