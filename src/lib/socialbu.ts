@@ -5,6 +5,8 @@
  * for seamless social media publishing via SocialBu's official API.
  */
 
+import { logger, LogContext } from './logger';
+
 const SOCIALBU_API_BASE = 'https://socialbu.com/api/v1';
 
 export interface SocialBuAccount {
@@ -78,14 +80,23 @@ export interface SocialBuPost {
 export class SocialBuClient {
   private apiKey: string;
   private baseUrl: string;
+  private context: LogContext;
 
-  constructor(apiKey?: string) {
+  constructor(apiKey?: string, context?: LogContext) {
     this.apiKey = apiKey || process.env.SOCIALBU_API_KEY || '';
     this.baseUrl = SOCIALBU_API_BASE;
+    this.context = context || {};
 
     if (!this.apiKey) {
-      throw new Error('SocialBu API key is required');
+      const error = new Error('SocialBu API key is required');
+      logger.error('SocialBuClient initialization failed', this.context, error);
+      throw error;
     }
+
+    logger.debug('SocialBuClient initialized', {
+      ...this.context,
+      baseUrl: this.baseUrl,
+    });
   }
 
   /**
@@ -100,21 +111,124 @@ export class SocialBuClient {
   }
 
   /**
+   * Sanitize API key for logging (show first 4 chars only)
+   */
+  private sanitizeApiKey(key: string): string {
+    return key.length > 4 ? `${key.substring(0, 4)}${'*'.repeat(12)}` : '***';
+  }
+
+  /**
+   * Enhanced fetch wrapper with timing, logging, and error handling
+   */
+  private async fetchWithLogging(
+    url: string,
+    options: RequestInit,
+    operationName: string
+  ): Promise<Response> {
+    const startTime = Date.now();
+    const method = options.method || 'GET';
+    
+    // Log request at DEBUG level
+    logger.debug(`[SocialBu API] ${operationName} - Request`, {
+      ...this.context,
+      method,
+      url,
+      hasBody: !!options.body,
+    });
+
+    // Log request body at DEBUG level (sanitized)
+    if (options.body && typeof options.body === 'string') {
+      try {
+        const bodyObj = JSON.parse(options.body);
+        logger.debug(`[SocialBu API] ${operationName} - Request body`, {
+          ...this.context,
+          body: bodyObj,
+        });
+      } catch {
+        // Not JSON, skip logging body
+      }
+    }
+
+    try {
+      const response = await fetch(url, options);
+      const durationMs = Date.now() - startTime;
+
+      // Log response
+      if (response.ok) {
+        logger.info(`[SocialBu API] ${operationName} - Success`, {
+          ...this.context,
+          method,
+          url,
+          statusCode: response.status,
+          durationMs,
+        });
+      } else {
+        // Clone response to read body without consuming it
+        const responseClone = response.clone();
+        let errorBody: any;
+        try {
+          errorBody = await responseClone.json();
+        } catch {
+          errorBody = await responseClone.text();
+        }
+
+        logger.error(`[SocialBu API] ${operationName} - Failed`, {
+          ...this.context,
+          method,
+          url,
+          statusCode: response.status,
+          durationMs,
+          responseBody: errorBody,
+        });
+      }
+
+      return response;
+    } catch (error) {
+      const durationMs = Date.now() - startTime;
+      logger.error(`[SocialBu API] ${operationName} - Network error`, {
+        ...this.context,
+        method,
+        url,
+        durationMs,
+      }, error as Error);
+      throw error;
+    }
+  }
+
+  /**
    * 1. AUTHENTICATION - Get connected accounts
    * GET /api/v1/accounts
    */
   async getAccounts(): Promise<SocialBuAccount[]> {
-    const response = await fetch(`${this.baseUrl}/accounts`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
+    const response = await this.fetchWithLogging(
+      `${this.baseUrl}/accounts`,
+      {
+        method: 'GET',
+        headers: this.getHeaders(),
+      },
+      'getAccounts'
+    );
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch accounts: ${response.statusText}`);
+      const errorBody = await response.text();
+      const error = new Error(`Failed to fetch accounts: ${response.statusText}`);
+      logger.error('Failed to fetch SocialBu accounts', {
+        ...this.context,
+        statusCode: response.status,
+        errorBody,
+      }, error);
+      throw error;
     }
 
     const data = await response.json();
-    return data.accounts || data || [];
+    const accounts = data.accounts || data || [];
+    
+    logger.info('Successfully fetched SocialBu accounts', {
+      ...this.context,
+      accountCount: accounts.length,
+    });
+    
+    return accounts;
   }
 
   /**
@@ -122,17 +236,30 @@ export class SocialBuClient {
    * POST /upload_media
    */
   async initiateMediaUpload(filename: string, mimeType: string): Promise<MediaUploadResponse> {
-    const response = await fetch(`${this.baseUrl}/upload_media`, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify({
-        name: filename,
-        mime_type: mimeType,
-      }),
-    });
+    const response = await this.fetchWithLogging(
+      `${this.baseUrl}/upload_media`,
+      {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify({
+          name: filename,
+          mime_type: mimeType,
+        }),
+      },
+      'initiateMediaUpload'
+    );
 
     if (!response.ok) {
-      throw new Error(`Failed to initiate media upload: ${response.statusText}`);
+      const errorBody = await response.text();
+      const error = new Error(`Failed to initiate media upload: ${response.statusText}`);
+      logger.error('Failed to initiate media upload', {
+        ...this.context,
+        filename,
+        mimeType,
+        statusCode: response.status,
+        errorBody,
+      }, error);
+      throw error;
     }
 
     return await response.json();
@@ -143,6 +270,13 @@ export class SocialBuClient {
    * This uploads the actual file content to SocialBu's storage
    */
   async uploadFileToSignedUrl(signedUrl: string, fileBlob: Blob): Promise<void> {
+    const startTime = Date.now();
+    logger.debug('[SocialBu API] uploadFileToSignedUrl - Starting', {
+      ...this.context,
+      fileSizeMB: (fileBlob.size / 1024 / 1024).toFixed(2),
+      fileType: fileBlob.type,
+    });
+
     const response = await fetch(signedUrl, {
       method: 'PUT',
       body: fileBlob,
@@ -151,9 +285,23 @@ export class SocialBuClient {
       },
     });
 
+    const durationMs = Date.now() - startTime;
+
     if (!response.ok) {
-      throw new Error(`Failed to upload file to signed URL: ${response.statusText}`);
+      const error = new Error(`Failed to upload file to signed URL: ${response.statusText}`);
+      logger.error('Failed to upload file to signed URL', {
+        ...this.context,
+        statusCode: response.status,
+        durationMs,
+      }, error);
+      throw error;
     }
+
+    logger.info('[SocialBu API] File uploaded to signed URL', {
+      ...this.context,
+      durationMs,
+      fileSizeMB: (fileBlob.size / 1024 / 1024).toFixed(2),
+    });
   }
 
   /**
@@ -161,13 +309,25 @@ export class SocialBuClient {
    * GET /api/v1/upload_media/status?key={key}
    */
   async checkMediaUploadStatus(key: string): Promise<MediaUploadStatus> {
-    const response = await fetch(`${this.baseUrl}/upload_media/status?key=${key}`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
+    const response = await this.fetchWithLogging(
+      `${this.baseUrl}/upload_media/status?key=${key}`,
+      {
+        method: 'GET',
+        headers: this.getHeaders(),
+      },
+      'checkMediaUploadStatus'
+    );
 
     if (!response.ok) {
-      throw new Error(`Failed to check upload status: ${response.statusText}`);
+      const errorBody = await response.text();
+      const error = new Error(`Failed to check upload status: ${response.statusText}`);
+      logger.error('Failed to check upload status', {
+        ...this.context,
+        key,
+        statusCode: response.status,
+        errorBody,
+      }, error);
+      throw error;
     }
 
     return await response.json();
@@ -178,15 +338,30 @@ export class SocialBuClient {
    * Takes a URL, downloads it, uploads to SocialBu, returns upload_token
    */
   async uploadMediaFromUrl(mediaUrl: string): Promise<string> {
+    const startTime = Date.now();
+    logger.info('[SocialBu] Starting complete media upload', {
+      ...this.context,
+      mediaUrl: mediaUrl.substring(0, 100),
+    });
+
     try {
       // Step 1: Download the media file
-      console.log(`📥 Downloading media from: ${mediaUrl.substring(0, 80)}...`);
+      logger.debug('[SocialBu] Step 1: Downloading media', {
+        ...this.context,
+        mediaUrl: mediaUrl.substring(0, 100),
+      });
+      
       const fileResponse = await fetch(mediaUrl);
       if (!fileResponse.ok) {
         throw new Error(`Failed to download media (HTTP ${fileResponse.status}): ${mediaUrl}`);
       }
       const fileBlob = await fileResponse.blob();
-      console.log(`✅ Downloaded ${(fileBlob.size / 1024 / 1024).toFixed(2)}MB (${fileBlob.type})`);
+      
+      logger.info('[SocialBu] Media downloaded successfully', {
+        ...this.context,
+        fileSizeMB: (fileBlob.size / 1024 / 1024).toFixed(2),
+        fileType: fileBlob.type,
+      });
       
       // Extract filename and MIME type
       const urlParts = mediaUrl.split('/');
@@ -196,12 +371,26 @@ export class SocialBuClient {
       const mimeType = fileBlob.type || 'image/jpeg';
 
       // Step 2: Initiate upload with SocialBu
-      console.log(`📤 Initiating SocialBu upload for: ${filename}`);
+      logger.debug('[SocialBu] Step 2: Initiating SocialBu upload', {
+        ...this.context,
+        filename,
+        mimeType,
+      });
+      
       const { signed_url, key } = await this.initiateMediaUpload(filename, mimeType);
-      console.log(`✅ Received signed URL with key: ${key}`);
+      
+      logger.debug('[SocialBu] Received signed URL', {
+        ...this.context,
+        key,
+      });
 
       // Step 3: Upload file to signed URL with required headers
-      console.log('📤 Uploading to signed URL...');
+      logger.debug('[SocialBu] Step 3: Uploading to signed URL', {
+        ...this.context,
+        key,
+      });
+      
+      const uploadStartTime = Date.now();
       const uploadResponse = await fetch(signed_url, {
         method: 'PUT',
         body: fileBlob,
@@ -215,10 +404,18 @@ export class SocialBuClient {
       if (!uploadResponse.ok) {
         throw new Error(`Failed to upload file to signed URL (HTTP ${uploadResponse.status}): ${uploadResponse.statusText}`);
       }
-      console.log('✅ File uploaded to signed URL');
+      
+      logger.info('[SocialBu] File uploaded to signed URL', {
+        ...this.context,
+        durationMs: Date.now() - uploadStartTime,
+      });
 
       // Step 4: Poll for completion and get upload_token
-      console.log('⏳ Polling for upload completion...');
+      logger.debug('[SocialBu] Step 4: Polling for upload completion', {
+        ...this.context,
+        key,
+      });
+      
       let attempts = 0;
       const maxAttempts = 30; // 30 seconds max
       
@@ -226,7 +423,13 @@ export class SocialBuClient {
         const status = await this.checkMediaUploadStatus(key);
         
         if (status.upload_token) {
-          console.log(`✅ Upload complete! Token: ${status.upload_token.substring(0, 20)}...`);
+          const totalDurationMs = Date.now() - startTime;
+          logger.info('[SocialBu] Upload complete! Token received', {
+            ...this.context,
+            uploadToken: status.upload_token.substring(0, 20) + '...',
+            totalDurationMs,
+            attempts: attempts + 1,
+          });
           return status.upload_token;
         }
         
@@ -234,7 +437,10 @@ export class SocialBuClient {
           throw new Error(`Media upload processing failed in SocialBu: ${status.error || 'Unknown error'}`);
         }
 
-        console.log(`  Poll ${attempts + 1}/${maxAttempts}: status=${status.status}`);
+        logger.debug(`[SocialBu] Poll ${attempts + 1}/${maxAttempts}`, {
+          ...this.context,
+          status: status.status,
+        });
         
         // Wait 1 second before checking again
         await new Promise(resolve => setTimeout(resolve, 1000));
@@ -244,7 +450,13 @@ export class SocialBuClient {
       throw new Error('Media upload timed out after 30 seconds. SocialBu may be processing the file.');
       
     } catch (error) {
-      console.error('❌ Media upload error:', error);
+      const totalDurationMs = Date.now() - startTime;
+      logger.error('[SocialBu] Media upload failed', {
+        ...this.context,
+        totalDurationMs,
+        mediaUrl: mediaUrl.substring(0, 100),
+      }, error as Error);
+      
       // Re-throw with more context
       if (error instanceof Error) {
         throw new Error(`Media upload failed: ${error.message}`);
@@ -259,26 +471,32 @@ export class SocialBuClient {
    */
   async createPost(payload: CreatePostPayload): Promise<CreatePostResponse> {
     try {
-      console.log('📤 Creating post in SocialBu with payload:', {
+      logger.info('[SocialBu] Creating post', {
+        ...this.context,
         accounts: payload.accounts,
-        content_length: payload.content?.length,
-        publish_at: payload.publish_at,
-        attachments_count: payload.existing_attachments?.length,
-        has_options: !!payload.options,
+        contentLength: payload.content?.length,
+        publishAt: payload.publish_at,
+        attachmentsCount: payload.existing_attachments?.length,
+        hasOptions: !!payload.options,
       });
       
-      const response = await fetch(`${this.baseUrl}/posts`, {
-        method: 'POST',
-        headers: this.getHeaders(),
-        body: JSON.stringify(payload),
-      });
+      const response = await this.fetchWithLogging(
+        `${this.baseUrl}/posts`,
+        {
+          method: 'POST',
+          headers: this.getHeaders(),
+          body: JSON.stringify(payload),
+        },
+        'createPost'
+      );
 
       const data = await response.json();
       
-      console.log('📥 SocialBu response:', {
+      logger.debug('[SocialBu] Create post response received', {
+        ...this.context,
         status: response.status,
         ok: response.ok,
-        data: data,
+        hasData: !!data,
       });
 
       if (!response.ok) {
@@ -295,7 +513,13 @@ export class SocialBuClient {
           errorMessage = `Validation error: ${data.message || 'Check media and content'}`;
         }
         
-        console.error('❌ SocialBu API error:', { status: response.status, message: errorMessage, errors });
+        logger.error('[SocialBu] Create post failed', {
+          ...this.context,
+          statusCode: response.status,
+          errorMessage,
+          errors,
+          responseData: data,
+        });
         
         return {
           success: false,
@@ -314,7 +538,10 @@ export class SocialBuClient {
         postId = data.id || data.post_id;
       }
 
-      console.log('✅ Post created successfully with ID:', postId);
+      logger.info('[SocialBu] Post created successfully', {
+        ...this.context,
+        postId,
+      });
 
       return {
         success: true,
@@ -322,7 +549,10 @@ export class SocialBuClient {
         message: 'Post scheduled successfully',
       };
     } catch (error) {
-      console.error('❌ Exception creating post:', error);
+      logger.error('[SocialBu] Exception creating post', {
+        ...this.context,
+      }, error as Error);
+      
       return {
         success: false,
         message: error instanceof Error ? error.message : 'Network error creating post',
@@ -336,13 +566,25 @@ export class SocialBuClient {
    * GET /api/v1/insights/posts/metrics
    */
   async getPostMetrics(postId: string): Promise<PostMetrics> {
-    const response = await fetch(`${this.baseUrl}/insights/posts/metrics?post_id=${postId}`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
+    const response = await this.fetchWithLogging(
+      `${this.baseUrl}/insights/posts/metrics?post_id=${postId}`,
+      {
+        method: 'GET',
+        headers: this.getHeaders(),
+      },
+      'getPostMetrics'
+    );
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch post metrics: ${response.statusText}`);
+      const errorBody = await response.text();
+      const error = new Error(`Failed to fetch post metrics: ${response.statusText}`);
+      logger.error('Failed to fetch post metrics', {
+        ...this.context,
+        postId,
+        statusCode: response.status,
+        errorBody,
+      }, error);
+      throw error;
     }
 
     return await response.json();
@@ -361,13 +603,26 @@ export class SocialBuClient {
       params.set('account_id', String(accountId));
     }
 
-    const response = await fetch(`${this.baseUrl}/posts?${params}`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
+    const response = await this.fetchWithLogging(
+      `${this.baseUrl}/posts?${params}`,
+      {
+        method: 'GET',
+        headers: this.getHeaders(),
+      },
+      'getPublishedPosts'
+    );
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch published posts: ${response.statusText}`);
+      const errorBody = await response.text();
+      const error = new Error(`Failed to fetch published posts: ${response.statusText}`);
+      logger.error('Failed to fetch published posts', {
+        ...this.context,
+        accountId,
+        limit,
+        statusCode: response.status,
+        errorBody,
+      }, error);
+      throw error;
     }
 
     const data = await response.json();
@@ -387,13 +642,26 @@ export class SocialBuClient {
       params.set('account_id', String(accountId));
     }
 
-    const response = await fetch(`${this.baseUrl}/posts?${params}`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
+    const response = await this.fetchWithLogging(
+      `${this.baseUrl}/posts?${params}`,
+      {
+        method: 'GET',
+        headers: this.getHeaders(),
+      },
+      'getScheduledPosts'
+    );
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch scheduled posts: ${response.statusText}`);
+      const errorBody = await response.text();
+      const error = new Error(`Failed to fetch scheduled posts: ${response.statusText}`);
+      logger.error('Failed to fetch scheduled posts', {
+        ...this.context,
+        accountId,
+        limit,
+        statusCode: response.status,
+        errorBody,
+      }, error);
+      throw error;
     }
 
     const data = await response.json();
@@ -405,13 +673,25 @@ export class SocialBuClient {
    * GET /api/v1/posts/{postId}
    */
   async getPost(postId: number | string): Promise<SocialBuPost> {
-    const response = await fetch(`${this.baseUrl}/posts/${postId}`, {
-      method: 'GET',
-      headers: this.getHeaders(),
-    });
+    const response = await this.fetchWithLogging(
+      `${this.baseUrl}/posts/${postId}`,
+      {
+        method: 'GET',
+        headers: this.getHeaders(),
+      },
+      'getPost'
+    );
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch post: ${response.statusText}`);
+      const errorBody = await response.text();
+      const error = new Error(`Failed to fetch post: ${response.statusText}`);
+      logger.error('Failed to fetch post', {
+        ...this.context,
+        postId,
+        statusCode: response.status,
+        errorBody,
+      }, error);
+      throw error;
     }
 
     return await response.json();
@@ -436,20 +716,43 @@ export class SocialBuClient {
       };
     }
   ): Promise<{ success: boolean; message?: string }> {
-    const response = await fetch(`${this.baseUrl}/posts/${postId}`, {
-      method: 'PATCH',
-      headers: this.getHeaders(),
-      body: JSON.stringify(updates),
+    logger.info('[SocialBu] Updating post', {
+      ...this.context,
+      postId,
+      hasContent: !!updates.content,
+      hasPublishAt: !!updates.publish_at,
     });
+
+    const response = await this.fetchWithLogging(
+      `${this.baseUrl}/posts/${postId}`,
+      {
+        method: 'PATCH',
+        headers: this.getHeaders(),
+        body: JSON.stringify(updates),
+      },
+      'updatePost'
+    );
 
     const data = await response.json();
 
     if (!response.ok) {
+      logger.error('[SocialBu] Update post failed', {
+        ...this.context,
+        postId,
+        statusCode: response.status,
+        responseData: data,
+      });
+      
       return {
         success: false,
         message: data.message || 'Failed to update post',
       };
     }
+
+    logger.info('[SocialBu] Post updated successfully', {
+      ...this.context,
+      postId,
+    });
 
     return {
       success: true,
@@ -462,19 +765,40 @@ export class SocialBuClient {
    * DELETE /api/v1/posts/{postId}
    */
   async deletePost(postId: number | string): Promise<{ success: boolean; message?: string }> {
-    const response = await fetch(`${this.baseUrl}/posts/${postId}`, {
-      method: 'DELETE',
-      headers: this.getHeaders(),
+    logger.info('[SocialBu] Deleting post', {
+      ...this.context,
+      postId,
     });
+
+    const response = await this.fetchWithLogging(
+      `${this.baseUrl}/posts/${postId}`,
+      {
+        method: 'DELETE',
+        headers: this.getHeaders(),
+      },
+      'deletePost'
+    );
 
     const data = await response.json();
 
     if (!response.ok) {
+      logger.error('[SocialBu] Delete post failed', {
+        ...this.context,
+        postId,
+        statusCode: response.status,
+        responseData: data,
+      });
+      
       return {
         success: false,
         message: data.message || 'Failed to delete post',
       };
     }
+
+    logger.info('[SocialBu] Post deleted successfully', {
+      ...this.context,
+      postId,
+    });
 
     return {
       success: true,
@@ -484,7 +808,7 @@ export class SocialBuClient {
 
   /**
    * CONVENIENCE METHOD: Schedule a post with media
-   * Handles the complete flow: upload media → create post
+   * Handles the complete flow: upload media ? create post
    */
   async schedulePostWithMedia(
     accountIds: number[],
